@@ -1174,7 +1174,27 @@ part(0,2,0,2,1,1,"b")`,
               description: 'Array of placements: [modelKey, [x,y,z], [rotX?,rotY?,rotZ?]]',
               items: {
                 type: 'array',
-                items: {}
+                minItems: 2,
+                maxItems: 3,
+                additionalItems: false,
+                items: [
+                  {
+                    type: 'string',
+                    minLength: 1
+                  },
+                  {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
+                  },
+                  {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
+                  }
+                ]
               }
             },
             custom: {

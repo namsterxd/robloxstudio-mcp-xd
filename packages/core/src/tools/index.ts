@@ -1024,10 +1024,34 @@ export class RobloxStudioTools {
     const modelMap = sceneData.models || {};
     const placements = sceneData.place || [];
 
-    for (const placement of placements) {
+    const isVec3Tuple = (value: unknown): value is [number, number, number] => {
+      return Array.isArray(value)
+        && value.length === 3
+        && value.every(component => typeof component === 'number' && Number.isFinite(component));
+    };
+
+    for (const [placementIndex, placement] of placements.entries()) {
+      if (!Array.isArray(placement) || placement.length < 2 || placement.length > 3) {
+        throw new Error(`Invalid sceneData.place[${placementIndex}]: expected [modelKey, [x,y,z], [rotX?,rotY?,rotZ?]]`);
+      }
+
       const [modelKey, position, rotation] = placement;
+      if (typeof modelKey !== 'string' || modelKey.trim() === '') {
+        throw new Error(`Invalid sceneData.place[${placementIndex}][0]: model key must be a non-empty string`);
+      }
+      if (!isVec3Tuple(position)) {
+        throw new Error(`Invalid sceneData.place[${placementIndex}][1]: position must be a numeric [x,y,z] tuple`);
+      }
+      if (rotation !== undefined && !isVec3Tuple(rotation)) {
+        throw new Error(`Invalid sceneData.place[${placementIndex}][2]: rotation must be a numeric [x,y,z] tuple when provided`);
+      }
+
       const buildId = modelMap[modelKey];
-      if (!buildId) continue;
+      if (!buildId) {
+        throw new Error(
+          `Invalid sceneData.place[${placementIndex}][0]: model key "${modelKey}" is not defined in sceneData.models`
+        );
+      }
 
       // Load build data from library
       const filePath = path.join(libraryPath, `${buildId}.json`);
@@ -1041,7 +1065,7 @@ export class RobloxStudioTools {
 
       expandedBuilds.push({
         buildData,
-        position: position || [0, 0, 0],
+        position,
         rotation: rotation || [0, 0, 0],
         name: buildName
       });
