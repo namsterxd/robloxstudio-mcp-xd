@@ -6,52 +6,11 @@
 
 ---
 
-## Fork Notice (2.4 Fix)
-
-This fork patches strict JSON schema compatibility issues in `robloxstudio-mcp` v2.4.x that can break MCP clients (Copilot/OpenCode/Codex) with errors like:
-
-`Invalid schema for function 'robloxstudio_create_build': In context=('properties', 'parts', 'items'), array schema missing items.`
-
-Fixed in this fork:
-- `create_build.parts` nested array schema
-- `import_scene.place` nested array schema hardening
-
-Upstream PR: https://github.com/boshyxd/robloxstudio-mcp/pull/56
-
 ## What is This?
 
 An MCP server that lets AI explore your game structure, read/edit scripts, and perform bulk changes all locally and safely.
 
 ## Setup
-
-### Using this fork (recommended until PR merges)
-
-```bash
-git clone https://github.com/namsterxd/robloxstudio-mcp-2.4fix
-cd robloxstudio-mcp-2.4fix
-npm ci
-npm run build
-mkdir -p build-library
-```
-
-Then connect your AI to the local build:
-
-**Claude Code:**
-```bash
-claude mcp add robloxstudio -- node /absolute/path/to/robloxstudio-mcp-2.4fix/packages/robloxstudio-mcp/dist/index.js
-```
-
-**Codex CLI:**
-```bash
-codex mcp add robloxstudio -- node /absolute/path/to/robloxstudio-mcp-2.4fix/packages/robloxstudio-mcp/dist/index.js
-```
-
-**Gemini CLI:**
-```bash
-gemini mcp add robloxstudio node --trust -- /absolute/path/to/robloxstudio-mcp-2.4fix/packages/robloxstudio-mcp/dist/index.js
-```
-
-### Upstream package setup
 
 1. Install the [Studio plugin](https://github.com/boshyxd/robloxstudio-mcp/releases) to your Plugins folder
 2. Enable **Allow HTTP Requests** in Experience Settings > Security
@@ -76,21 +35,6 @@ Plugin shows "Connected" when ready.
 
 <details>
 <summary>Other MCP clients (Claude Desktop, Cursor, etc.)</summary>
-
-**Local fork build (recommended):**
-
-```json
-{
-  "mcpServers": {
-    "robloxstudio-mcp": {
-      "command": "node",
-      "args": ["/absolute/path/to/robloxstudio-mcp-2.4fix/packages/robloxstudio-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-**NPM package:**
 
 ```json
 {
@@ -179,6 +123,6 @@ gemini mcp add robloxstudio-inspector npx --trust -- -y robloxstudio-mcp-inspect
 
 ---
 
-<!-- VERSION_LINE -->**v2.4.0-forkfix** - schema fix for strict MCP clients, plus full and inspector editions
+<!-- VERSION_LINE -->**v2.4.0** - 39 tools, inspector edition, monorepo architecture
 
-[Report Issues](https://github.com/namsterxd/robloxstudio-mcp-2.4fix/issues) | [DevForum](https://devforum.roblox.com/t/v180-roblox-studio-mcp-speed-up-your-workflow-by-letting-ai-read-paths-and-properties/3707071) | MIT Licensed
+[Report Issues](https://github.com/boshyxd/robloxstudio-mcp/issues) | [DevForum](https://devforum.roblox.com/t/v180-roblox-studio-mcp-speed-up-your-workflow-by-letting-ai-read-paths-and-properties/3707071) | MIT Licensed

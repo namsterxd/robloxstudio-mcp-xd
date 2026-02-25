@@ -707,7 +707,7 @@ export class RobloxStudioTools {
 
   private static findLibraryPath(): string {
     // Walk up from the script location to find the repo root (has .gitignore + package.json)
-    let dir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'));
+    let dir = path.dirname(decodeURIComponent(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1'));
     for (let i = 0; i < 6; i++) {
       const candidate = path.join(dir, 'build-library');
       if (fs.existsSync(candidate)) return candidate;

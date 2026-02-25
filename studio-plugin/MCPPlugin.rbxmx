@@ -3927,14 +3927,10 @@ local function getInstanceByPath(path)
 	end
 	local current = game
 	for _, part in parts do
-		local _result = current
-		if _result ~= nil then
-			_result = _result:FindFirstChild(part)
-		end
-		current = _result
 		if not current then
 			return nil
 		end
+		current = current:FindFirstChild(part)
 	end
 	return current
 end

@@ -39,8 +39,8 @@ function getInstanceByPath(path: string): Instance | undefined {
 
 	let current: Instance | undefined = game;
 	for (const part of parts) {
-		current = current?.FindFirstChild(part);
 		if (!current) return undefined;
+		current = current.FindFirstChild(part);
 	}
 
 	return current;
