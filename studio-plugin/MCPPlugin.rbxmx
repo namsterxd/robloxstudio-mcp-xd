@@ -1339,6 +1339,91 @@ local convertPropertyValue = _binding.convertPropertyValue
 local _binding_1 = Recording
 local beginRecording = _binding_1.beginRecording
 local finishRecording = _binding_1.finishRecording
+local function processObjectEntries(objects, createFn)
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+	local loopSuccess, loopError = pcall(function()
+		for _, entry in objects do
+			if not (type(entry) == "table") then
+				failureCount += 1
+				table.insert(results, {
+					success = false,
+					error = "Each object entry must be a table",
+				})
+				continue
+			end
+			local objData = entry
+			local className = objData.className
+			local parentPath = objData.parent
+			if not (className ~= "" and className) or not (parentPath ~= "" and parentPath) then
+				failureCount += 1
+				table.insert(results, {
+					success = false,
+					error = "Class name and parent are required",
+				})
+				continue
+			end
+			local entrySuccess, entryResult = pcall(function()
+				return createFn(objData)
+			end)
+			if not entrySuccess then
+				failureCount += 1
+				local _arg0 = {
+					success = false,
+					className = className,
+					parent = parentPath,
+					error = tostring(entryResult),
+				}
+				table.insert(results, _arg0)
+				continue
+			end
+			if entryResult.instance ~= nil then
+				successCount += 1
+				local _arg0 = {
+					success = true,
+					className = entryResult.className,
+					parent = entryResult.parentPath,
+					instancePath = getInstancePath(entryResult.instance),
+					name = entryResult.instance.Name,
+				}
+				table.insert(results, _arg0)
+			else
+				failureCount += 1
+				local _object = {
+					success = false,
+				}
+				local _left = "className"
+				local _condition = entryResult.className
+				if _condition == nil then
+					_condition = className
+				end
+				_object[_left] = _condition
+				local _left_1 = "parent"
+				local _condition_1 = entryResult.parentPath
+				if _condition_1 == nil then
+					_condition_1 = parentPath
+				end
+				_object[_left_1] = _condition_1
+				_object.error = entryResult.error
+				table.insert(results, _object)
+			end
+		end
+	end)
+	if not loopSuccess then
+		failureCount += 1
+		local _arg0 = {
+			success = false,
+			error = `Unexpected mass create failure: {tostring(loopError)}`,
+		}
+		table.insert(results, _arg0)
+	end
+	return {
+		results = results,
+		successCount = successCount,
+		failureCount = failureCount,
+	}
+end
 local function createObject(requestData)
 	local className = requestData.className
 	local parentPath = requestData.parent
@@ -1433,86 +1518,43 @@ local function massCreateObjects(requestData)
 			error = "Objects array is required",
 		}
 	end
-	local results = {}
-	local successCount = 0
-	local failureCount = 0
 	local recordingId = beginRecording("Mass create objects")
-	local loopSuccess, loopError = pcall(function()
-		for _, entry in objects do
-			if not (type(entry) == "table") then
-				failureCount += 1
-				table.insert(results, {
-					success = false,
-					error = "Each object entry must be a table",
-				})
-				continue
-			end
-			local objData = entry
-			local className = objData.className
-			local parentPath = objData.parent
-			local name = objData.name
-			local _condition = className
-			if _condition ~= "" and _condition then
-				_condition = parentPath
-			end
-			if _condition ~= "" and _condition then
-				local parentInstance = getInstanceByPath(parentPath)
-				if parentInstance then
-					local success, newInstance = pcall(function()
-						local instance = Instance.new(className)
-						if name ~= "" and name then
-							instance.Name = name
-						end
-						instance.Parent = parentInstance
-						return instance
-					end)
-					if success and newInstance then
-						successCount += 1
-						local _arg0 = {
-							success = true,
-							className = className,
-							parent = parentPath,
-							instancePath = getInstancePath(newInstance),
-							name = newInstance.Name,
-						}
-						table.insert(results, _arg0)
-					else
-						failureCount += 1
-						local _arg0 = {
-							success = false,
-							className = className,
-							parent = parentPath,
-							error = tostring(newInstance),
-						}
-						table.insert(results, _arg0)
-					end
-				else
-					failureCount += 1
-					local _arg0 = {
-						success = false,
-						className = className,
-						parent = parentPath,
-						error = "Parent instance not found",
-					}
-					table.insert(results, _arg0)
-				end
-			else
-				failureCount += 1
-				table.insert(results, {
-					success = false,
-					error = "Class name and parent are required",
-				})
-			end
+	local _binding_2 = processObjectEntries(objects, function(objData)
+		local className = objData.className
+		local parentPath = objData.parent
+		local name = objData.name
+		local parentInstance = getInstanceByPath(parentPath)
+		if not parentInstance then
+			return {
+				error = "Parent instance not found",
+				className = className,
+				parentPath = parentPath,
+			}
 		end
-	end)
-	if not loopSuccess then
-		failureCount += 1
-		local _arg0 = {
-			success = false,
-			error = `Unexpected mass create failure: {tostring(loopError)}`,
+		local success, newInstance = pcall(function()
+			local instance = Instance.new(className)
+			if name ~= "" and name then
+				instance.Name = name
+			end
+			instance.Parent = parentInstance
+			return instance
+		end)
+		if not success or not newInstance then
+			return {
+				error = tostring(newInstance),
+				className = className,
+				parentPath = parentPath,
+			}
+		end
+		return {
+			instance = newInstance,
+			className = className,
+			parentPath = parentPath,
 		}
-		table.insert(results, _arg0)
-	end
+	end)
+	local results = _binding_2.results
+	local successCount = _binding_2.successCount
+	local failureCount = _binding_2.failureCount
 	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
@@ -1530,97 +1572,54 @@ local function massCreateObjectsWithProperties(requestData)
 			error = "Objects array is required",
 		}
 	end
-	local results = {}
-	local successCount = 0
-	local failureCount = 0
 	local recordingId = beginRecording("Mass create objects with properties")
-	local loopSuccess, loopError = pcall(function()
-		for _, entry in objects do
-			if not (type(entry) == "table") then
-				failureCount += 1
-				table.insert(results, {
-					success = false,
-					error = "Each object entry must be a table",
-				})
-				continue
-			end
-			local objData = entry
-			local className = objData.className
-			local parentPath = objData.parent
-			local name = objData.name
-			local propertiesRaw = objData.properties
-			local properties = if type(propertiesRaw) == "table" then propertiesRaw else ({})
-			local _condition = className
-			if _condition ~= "" and _condition then
-				_condition = parentPath
-			end
-			if _condition ~= "" and _condition then
-				local parentInstance = getInstanceByPath(parentPath)
-				if parentInstance then
-					local success, newInstance = pcall(function()
-						local instance = Instance.new(className)
-						if name ~= "" and name then
-							instance.Name = name
-						end
-						instance.Parent = parentInstance
-						for propName, propValue in pairs(properties) do
-							pcall(function()
-								local propNameStr = tostring(propName)
-								local converted = convertPropertyValue(instance, propNameStr, propValue)
-								if converted ~= nil then
-									instance[propNameStr] = converted
-								end
-							end)
-						end
-						return instance
-					end)
-					if success and newInstance then
-						successCount += 1
-						local _arg0 = {
-							success = true,
-							className = className,
-							parent = parentPath,
-							instancePath = getInstancePath(newInstance),
-							name = newInstance.Name,
-						}
-						table.insert(results, _arg0)
-					else
-						failureCount += 1
-						local _arg0 = {
-							success = false,
-							className = className,
-							parent = parentPath,
-							error = tostring(newInstance),
-						}
-						table.insert(results, _arg0)
-					end
-				else
-					failureCount += 1
-					local _arg0 = {
-						success = false,
-						className = className,
-						parent = parentPath,
-						error = "Parent instance not found",
-					}
-					table.insert(results, _arg0)
-				end
-			else
-				failureCount += 1
-				table.insert(results, {
-					success = false,
-					error = "Class name and parent are required",
-				})
-			end
+	local _binding_2 = processObjectEntries(objects, function(objData)
+		local className = objData.className
+		local parentPath = objData.parent
+		local name = objData.name
+		local propertiesRaw = objData.properties
+		local properties = if type(propertiesRaw) == "table" then propertiesRaw else ({})
+		local parentInstance = getInstanceByPath(parentPath)
+		if not parentInstance then
+			return {
+				error = "Parent instance not found",
+				className = className,
+				parentPath = parentPath,
+			}
 		end
-	end)
-	if not loopSuccess then
-		failureCount += 1
-		local _arg0 = {
-			success = false,
-			error = `Unexpected mass create failure: {tostring(loopError)}`,
+		local success, newInstance = pcall(function()
+			local instance = Instance.new(className)
+			if name ~= "" and name then
+				instance.Name = name
+			end
+			instance.Parent = parentInstance
+			for propName, propValue in pairs(properties) do
+				pcall(function()
+					local propNameStr = tostring(propName)
+					local converted = convertPropertyValue(instance, propNameStr, propValue)
+					if converted ~= nil then
+						instance[propNameStr] = converted
+					end
+				end)
+			end
+			return instance
+		end)
+		if not success or not newInstance then
+			return {
+				error = tostring(newInstance),
+				className = className,
+				parentPath = parentPath,
+			}
+		end
+		return {
+			instance = newInstance,
+			className = className,
+			parentPath = parentPath,
 		}
-		table.insert(results, _arg0)
-	end
+	end)
+	local results = _binding_2.results
+	local successCount = _binding_2.successCount
+	local failureCount = _binding_2.failureCount
 	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,

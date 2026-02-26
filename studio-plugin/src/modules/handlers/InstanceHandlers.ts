@@ -4,6 +4,86 @@ import Recording from "../Recording";
 const { getInstancePath, getInstanceByPath, convertPropertyValue } = Utils;
 const { beginRecording, finishRecording } = Recording;
 
+type ProcessedCreateResult =
+	| {
+		instance: Instance;
+		className: string;
+		parentPath: string;
+	}
+	| {
+		error: string;
+		className?: string;
+		parentPath?: string;
+	};
+
+type ProcessedBatchResult = {
+	results: Record<string, unknown>[];
+	successCount: number;
+	failureCount: number;
+};
+
+function processObjectEntries(
+	objects: Record<string, unknown>[],
+	createFn: (objData: Record<string, unknown>) => ProcessedCreateResult,
+): ProcessedBatchResult {
+	const results: Record<string, unknown>[] = [];
+	let successCount = 0;
+	let failureCount = 0;
+
+	const [loopSuccess, loopError] = pcall(() => {
+		for (const entry of objects) {
+			if (!typeIs(entry, "table")) {
+				failureCount++;
+				results.push({ success: false, error: "Each object entry must be a table" });
+				continue;
+			}
+
+			const objData = entry as Record<string, unknown>;
+			const className = objData.className as string;
+			const parentPath = objData.parent as string;
+
+			if (!className || !parentPath) {
+				failureCount++;
+				results.push({ success: false, error: "Class name and parent are required" });
+				continue;
+			}
+
+			const [entrySuccess, entryResult] = pcall(() => createFn(objData));
+			if (!entrySuccess) {
+				failureCount++;
+				results.push({ success: false, className, parent: parentPath, error: tostring(entryResult) });
+				continue;
+			}
+
+			if ("instance" in entryResult) {
+				successCount++;
+				results.push({
+					success: true,
+					className: entryResult.className,
+					parent: entryResult.parentPath,
+					instancePath: getInstancePath(entryResult.instance),
+					name: entryResult.instance.Name,
+				});
+			} else {
+				failureCount++;
+				results.push({
+					success: false,
+					className: entryResult.className ?? className,
+					parent: entryResult.parentPath ?? parentPath,
+					error: entryResult.error,
+				});
+			}
+		}
+	});
+
+	if (!loopSuccess) {
+		failureCount++;
+		results.push({ success: false, error: `Unexpected mass create failure: ${tostring(loopError)}` });
+	}
+
+	return { results, successCount, failureCount };
+}
+
 function createObject(requestData: Record<string, unknown>) {
 	const className = requestData.className as string;
 	const parentPath = requestData.parent as string;
@@ -77,60 +157,30 @@ function massCreateObjects(requestData: Record<string, unknown>) {
 		return { error: "Objects array is required" };
 	}
 
-	const results: Record<string, unknown>[] = [];
-	let successCount = 0;
-	let failureCount = 0;
 	const recordingId = beginRecording("Mass create objects");
 
-	const [loopSuccess, loopError] = pcall(() => {
-		for (const entry of objects) {
-			if (!typeIs(entry, "table")) {
-				failureCount++;
-				results.push({ success: false, error: "Each object entry must be a table" });
-				continue;
-			}
-
-			const objData = entry as Record<string, unknown>;
-			const className = objData.className as string;
-			const parentPath = objData.parent as string;
-			const name = objData.name as string | undefined;
-
-			if (className && parentPath) {
-				const parentInstance = getInstanceByPath(parentPath);
-				if (parentInstance) {
-					const [success, newInstance] = pcall(() => {
-						const instance = new Instance(className as keyof CreatableInstances);
-						if (name) instance.Name = name;
-						instance.Parent = parentInstance;
-						return instance;
-					});
-
-					if (success && newInstance) {
-						successCount++;
-						results.push({
-							success: true, className, parent: parentPath,
-							instancePath: getInstancePath(newInstance as Instance),
-							name: (newInstance as Instance).Name,
-						});
-					} else {
-						failureCount++;
-						results.push({ success: false, className, parent: parentPath, error: tostring(newInstance) });
-					}
-				} else {
-					failureCount++;
-					results.push({ success: false, className, parent: parentPath, error: "Parent instance not found" });
-				}
-			} else {
-				failureCount++;
-				results.push({ success: false, error: "Class name and parent are required" });
-			}
+	const { results, successCount, failureCount } = processObjectEntries(objects, (objData) => {
+		const className = objData.className as string;
+		const parentPath = objData.parent as string;
+		const name = objData.name as string | undefined;
+		const parentInstance = getInstanceByPath(parentPath);
+		if (!parentInstance) {
+			return { error: "Parent instance not found", className, parentPath };
 		}
-	});
 
-	if (!loopSuccess) {
-		failureCount++;
-		results.push({ success: false, error: `Unexpected mass create failure: ${tostring(loopError)}` });
-	}
+		const [success, newInstance] = pcall(() => {
+			const instance = new Instance(className as keyof CreatableInstances);
+			if (name) instance.Name = name;
+			instance.Parent = parentInstance;
+			return instance;
+		});
+
+		if (!success || !newInstance) {
+			return { error: tostring(newInstance), className, parentPath };
+		}
+
+		return { instance: newInstance as Instance, className, parentPath };
+	});
 
 	finishRecording(recordingId, successCount > 0);
 	return { results, summary: { total: (objects as defined[]).size(), succeeded: successCount, failed: failureCount } };
@@ -142,74 +192,45 @@ function massCreateObjectsWithProperties(requestData: Record<string, unknown>) {
 		return { error: "Objects array is required" };
 	}
 
-	const results: Record<string, unknown>[] = [];
-	let successCount = 0;
-	let failureCount = 0;
 	const recordingId = beginRecording("Mass create objects with properties");
 
-	const [loopSuccess, loopError] = pcall(() => {
-		for (const entry of objects) {
-			if (!typeIs(entry, "table")) {
-				failureCount++;
-				results.push({ success: false, error: "Each object entry must be a table" });
-				continue;
-			}
+	const { results, successCount, failureCount } = processObjectEntries(objects, (objData) => {
+		const className = objData.className as string;
+		const parentPath = objData.parent as string;
+		const name = objData.name as string | undefined;
+		const propertiesRaw = objData.properties;
+		const properties = typeIs(propertiesRaw, "table")
+			? (propertiesRaw as Record<string, unknown>)
+			: ({} as Record<string, unknown>);
 
-			const objData = entry as Record<string, unknown>;
-			const className = objData.className as string;
-			const parentPath = objData.parent as string;
-			const name = objData.name as string | undefined;
-			const propertiesRaw = objData.properties;
-			const properties = typeIs(propertiesRaw, "table")
-				? (propertiesRaw as Record<string, unknown>)
-				: ({} as Record<string, unknown>);
-
-			if (className && parentPath) {
-				const parentInstance = getInstanceByPath(parentPath);
-				if (parentInstance) {
-					const [success, newInstance] = pcall(() => {
-						const instance = new Instance(className as keyof CreatableInstances);
-						if (name) instance.Name = name;
-						instance.Parent = parentInstance;
-
-						for (const [propName, propValue] of pairs(properties)) {
-							pcall(() => {
-								const propNameStr = tostring(propName);
-								const converted = convertPropertyValue(instance, propNameStr, propValue);
-								if (converted !== undefined) {
-									(instance as unknown as { [key: string]: unknown })[propNameStr] = converted;
-								}
-							});
-						}
-						return instance;
-					});
-
-					if (success && newInstance) {
-						successCount++;
-						results.push({
-							success: true, className, parent: parentPath,
-							instancePath: getInstancePath(newInstance as Instance),
-							name: (newInstance as Instance).Name,
-						});
-					} else {
-						failureCount++;
-						results.push({ success: false, className, parent: parentPath, error: tostring(newInstance) });
-					}
-				} else {
-					failureCount++;
-					results.push({ success: false, className, parent: parentPath, error: "Parent instance not found" });
-				}
-			} else {
-				failureCount++;
-				results.push({ success: false, error: "Class name and parent are required" });
-			}
+		const parentInstance = getInstanceByPath(parentPath);
+		if (!parentInstance) {
+			return { error: "Parent instance not found", className, parentPath };
 		}
-	});
 
-	if (!loopSuccess) {
-		failureCount++;
-		results.push({ success: false, error: `Unexpected mass create failure: ${tostring(loopError)}` });
-	}
+		const [success, newInstance] = pcall(() => {
+			const instance = new Instance(className as keyof CreatableInstances);
+			if (name) instance.Name = name;
+			instance.Parent = parentInstance;
+
+			for (const [propName, propValue] of pairs(properties)) {
+				pcall(() => {
+					const propNameStr = tostring(propName);
+					const converted = convertPropertyValue(instance, propNameStr, propValue);
+					if (converted !== undefined) {
+						(instance as unknown as { [key: string]: unknown })[propNameStr] = converted;
+					}
+				});
+			}
+			return instance;
+		});
+
+		if (!success || !newInstance) {
+			return { error: tostring(newInstance), className, parentPath };
+		}
+
+		return { instance: newInstance as Instance, className, parentPath };
+	});
 
 	finishRecording(recordingId, successCount > 0);
 	return { results, summary: { total: (objects as defined[]).size(), succeeded: successCount, failed: failureCount } };
