@@ -24,67 +24,69 @@ function insertAsset(requestData: Record<string, unknown>) {
 
 	const recordingId = beginRecording(`Insert asset ${assetId}`);
 
-	const [loadSuccess, wrapperModel] = pcall(() => {
-		return (AssetService as unknown as { LoadAssetAsync(id: number): Instance }).LoadAssetAsync(assetId);
-	});
+	let wrapperModel: Instance | undefined;
+	const [insertSuccess, insertResult] = pcall(() => {
+		const loadedWrapper = (AssetService as unknown as { LoadAssetAsync(id: number): Instance }).LoadAssetAsync(assetId);
+		wrapperModel = loadedWrapper;
 
-	if (!loadSuccess || !wrapperModel) {
-		finishRecording(recordingId, false);
-		return { error: `Failed to load asset ${assetId}: ${tostring(wrapperModel)}` };
-	}
+		const insertedInstances: Instance[] = [];
+		const children = loadedWrapper.GetChildren();
 
-	const insertedInstances: Instance[] = [];
-	const children = (wrapperModel as Instance).GetChildren();
+		for (const child of children) {
+			child.Parent = parentInstance;
+			insertedInstances.push(child);
+		}
 
-	for (const child of children) {
-		child.Parent = parentInstance;
-		insertedInstances.push(child);
-	}
-
-	// Apply position if provided
-	if (position) {
-		const pos = new Vector3(position.x ?? 0, position.y ?? 0, position.z ?? 0);
-		for (const inst of insertedInstances) {
-			if (inst.IsA("BasePart")) {
-				inst.Position = pos;
-			} else if (inst.IsA("Model")) {
-				if (inst.PrimaryPart) {
-					inst.PivotTo(new CFrame(pos));
-				} else {
-					// Find first BasePart descendant to pivot around
-					const firstPart = inst.FindFirstChildWhichIsA("BasePart", true);
-					if (firstPart) {
+		if (position) {
+			const pos = new Vector3(position.x ?? 0, position.y ?? 0, position.z ?? 0);
+			for (const inst of insertedInstances) {
+				if (inst.IsA("BasePart")) {
+					inst.Position = pos;
+				} else if (inst.IsA("Model")) {
+					if (inst.PrimaryPart) {
 						inst.PivotTo(new CFrame(pos));
+					} else {
+						const firstPart = inst.FindFirstChildWhichIsA("BasePart", true);
+						if (firstPart) {
+							inst.PivotTo(new CFrame(pos));
+						}
 					}
 				}
 			}
 		}
-	}
 
-	// Destroy the wrapper model
-	(wrapperModel as Instance).Destroy();
+		pcall(() => {
+			Selection.Set(insertedInstances);
+		});
 
-	// Set undo waypoint
-	finishRecording(recordingId, true);
+		const resultInstances = insertedInstances.map((inst) => ({
+			name: inst.Name,
+			className: inst.ClassName,
+			path: getInstancePath(inst),
+		}));
 
-	// Select inserted instances
-	pcall(() => {
-		Selection.Set(insertedInstances);
+		return {
+			success: true,
+			assetId,
+			parentPath,
+			insertedCount: insertedInstances.size(),
+			instances: resultInstances,
+		};
 	});
 
-	const resultInstances = insertedInstances.map((inst) => ({
-		name: inst.Name,
-		className: inst.ClassName,
-		path: getInstancePath(inst),
-	}));
+	if (wrapperModel) {
+		pcall(() => {
+			wrapperModel!.Destroy();
+		});
+	}
 
-	return {
-		success: true,
-		assetId,
-		parentPath,
-		insertedCount: insertedInstances.size(),
-		instances: resultInstances,
-	};
+	finishRecording(recordingId, insertSuccess);
+
+	if (!insertSuccess) {
+		return { error: `Failed to insert asset ${assetId}: ${tostring(insertResult)}` };
+	}
+
+	return insertResult;
 }
 
 function previewAsset(requestData: Record<string, unknown>) {
@@ -201,27 +203,36 @@ function previewAsset(requestData: Record<string, unknown>) {
 		return node;
 	}
 
-	const hierarchyRoots: Record<string, unknown>[] = [];
-	for (const child of (wrapperModel as Instance).GetChildren()) {
-		hierarchyRoots.push(buildHierarchy(child, 0));
+	const [previewSuccess, previewResult] = pcall(() => {
+		const hierarchyRoots: Record<string, unknown>[] = [];
+		for (const child of (wrapperModel as Instance).GetChildren()) {
+			hierarchyRoots.push(buildHierarchy(child, 0));
+		}
+
+		return {
+			success: true,
+			assetId,
+			hierarchy: hierarchyRoots,
+			summary: {
+				totalInstances,
+				classCounts,
+				hasScripts,
+				hasAnimations,
+				hasSounds,
+				hasParticles,
+			},
+		};
+	});
+
+	pcall(() => {
+		(wrapperModel as Instance).Destroy();
+	});
+
+	if (!previewSuccess) {
+		return { error: `Failed to preview asset ${assetId}: ${tostring(previewResult)}` };
 	}
 
-	// CRITICAL: Destroy wrapper to prevent memory leak
-	(wrapperModel as Instance).Destroy();
-
-	return {
-		success: true,
-		assetId,
-		hierarchy: hierarchyRoots,
-		summary: {
-			totalInstances,
-			classCounts,
-			hasScripts,
-			hasAnimations,
-			hasSounds,
-			hasParticles,
-		},
-	};
+	return previewResult;
 }
 
 export = {
