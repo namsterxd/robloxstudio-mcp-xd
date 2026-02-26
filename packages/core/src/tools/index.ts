@@ -1037,6 +1037,7 @@ export class RobloxStudioTools {
       let modelKey: string;
       let position: [number, number, number];
       let rotation: [number, number, number] | undefined;
+      let validatedKeyPath: string;
 
       if (Array.isArray(placement)) {
         if (placement.length < 2 || placement.length > 3) {
@@ -1049,6 +1050,7 @@ export class RobloxStudioTools {
           throw new Error(`Invalid sceneData.place[${placementIndex}][0]: model key must be a non-empty string`);
         }
         modelKey = tupleModelKey.trim();
+        validatedKeyPath = `sceneData.place[${placementIndex}][0]`;
         if (!isVec3Tuple(tuplePosition)) {
           throw new Error(`Invalid sceneData.place[${placementIndex}][1]: position must be a numeric [x,y,z] tuple`);
         }
@@ -1078,6 +1080,7 @@ export class RobloxStudioTools {
           );
         }
         modelKey = objectModelKey.trim();
+        validatedKeyPath = `sceneData.place[${placementIndex}].modelKey`;
         position = objectPosition;
         rotation = objectRotation as [number, number, number] | undefined;
       } else {
@@ -1089,7 +1092,7 @@ export class RobloxStudioTools {
       const buildId = modelMap[modelKey];
       if (!buildId) {
         throw new Error(
-          `Invalid sceneData.place[${placementIndex}][0]: model key "${modelKey}" is not defined in sceneData.models`
+          `Invalid ${validatedKeyPath}: model key "${modelKey}" is not defined in sceneData.models`
         );
       }
 
