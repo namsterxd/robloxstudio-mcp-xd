@@ -54,6 +54,7 @@ local MetadataHandlers = TS.import(script, script.Parent, "handlers", "MetadataH
 local TestHandlers = TS.import(script, script.Parent, "handlers", "TestHandlers")
 local BuildHandlers = TS.import(script, script.Parent, "handlers", "BuildHandlers")
 local AssetHandlers = TS.import(script, script.Parent, "handlers", "AssetHandlers")
+local SceneHandlers = TS.import(script, script.Parent, "handlers", "SceneHandlers")
 local routeMap = {
 	["/api/file-tree"] = QueryHandlers.getFileTree,
 	["/api/search-files"] = QueryHandlers.searchFiles,
@@ -66,6 +67,8 @@ local routeMap = {
 	["/api/class-info"] = QueryHandlers.getClassInfo,
 	["/api/project-structure"] = QueryHandlers.getProjectStructure,
 	["/api/grep-scripts"] = QueryHandlers.grepScripts,
+	["/api/script-index"] = QueryHandlers.scriptIndex,
+	["/api/find-references"] = QueryHandlers.findReferences,
 	["/api/set-property"] = PropertyHandlers.setProperty,
 	["/api/mass-set-property"] = PropertyHandlers.massSetProperty,
 	["/api/mass-get-property"] = PropertyHandlers.massGetProperty,
@@ -82,6 +85,8 @@ local routeMap = {
 	["/api/edit-script-lines"] = ScriptHandlers.editScriptLines,
 	["/api/insert-script-lines"] = ScriptHandlers.insertScriptLines,
 	["/api/delete-script-lines"] = ScriptHandlers.deleteScriptLines,
+	["/api/apply-patch-batch"] = ScriptHandlers.applyPatchBatch,
+	["/api/rename-symbol"] = ScriptHandlers.renameSymbol,
 	["/api/get-attribute"] = MetadataHandlers.getAttribute,
 	["/api/set-attribute"] = MetadataHandlers.setAttribute,
 	["/api/get-attributes"] = MetadataHandlers.getAttributes,
@@ -97,6 +102,11 @@ local routeMap = {
 	["/api/start-playtest"] = TestHandlers.startPlaytest,
 	["/api/stop-playtest"] = TestHandlers.stopPlaytest,
 	["/api/get-playtest-output"] = TestHandlers.getPlaytestOutput,
+	["/api/run-tests"] = TestHandlers.runTests,
+	["/api/run-playtest-checks"] = TestHandlers.runPlaytestChecks,
+	["/api/logs-since"] = TestHandlers.logsSince,
+	["/api/snapshot-scene"] = SceneHandlers.snapshotScene,
+	["/api/diff-scene"] = SceneHandlers.diffScene,
 	["/api/export-build"] = BuildHandlers.exportBuild,
 	["/api/import-build"] = BuildHandlers.importBuild,
 	["/api/import-scene"] = BuildHandlers.importScene,
@@ -510,82 +520,81 @@ local function insertAsset(requestData)
 		}
 	end
 	local recordingId = beginRecording(`Insert asset {assetId}`)
-	local wrapperModel
-	local insertSuccess, insertResult = pcall(function()
-		local loadedWrapper = AssetService:LoadAssetAsync(assetId)
-		wrapperModel = loadedWrapper
-		local insertedInstances = {}
-		local children = loadedWrapper:GetChildren()
-		for _, child in children do
-			child.Parent = parentInstance
-			table.insert(insertedInstances, child)
+	local loadSuccess, wrapperModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	if not loadSuccess or not wrapperModel then
+		finishRecording(recordingId, false)
+		return {
+			error = `Failed to load asset {assetId}: {tostring(wrapperModel)}`,
+		}
+	end
+	local insertedInstances = {}
+	local children = wrapperModel:GetChildren()
+	for _, child in children do
+		child.Parent = parentInstance
+		table.insert(insertedInstances, child)
+	end
+	-- Apply position if provided
+	if position then
+		local _condition_1 = position.x
+		if _condition_1 == nil then
+			_condition_1 = 0
 		end
-		if position then
-			local _condition_1 = position.x
-			if _condition_1 == nil then
-				_condition_1 = 0
-			end
-			local _condition_2 = position.y
-			if _condition_2 == nil then
-				_condition_2 = 0
-			end
-			local _condition_3 = position.z
-			if _condition_3 == nil then
-				_condition_3 = 0
-			end
-			local pos = Vector3.new(_condition_1, _condition_2, _condition_3)
-			for _, inst in insertedInstances do
-				if inst:IsA("BasePart") then
-					inst.Position = pos
-				elseif inst:IsA("Model") then
-					if inst.PrimaryPart then
+		local _condition_2 = position.y
+		if _condition_2 == nil then
+			_condition_2 = 0
+		end
+		local _condition_3 = position.z
+		if _condition_3 == nil then
+			_condition_3 = 0
+		end
+		local pos = Vector3.new(_condition_1, _condition_2, _condition_3)
+		for _, inst in insertedInstances do
+			if inst:IsA("BasePart") then
+				inst.Position = pos
+			elseif inst:IsA("Model") then
+				if inst.PrimaryPart then
+					inst:PivotTo(CFrame.new(pos))
+				else
+					-- Find first BasePart descendant to pivot around
+					local firstPart = inst:FindFirstChildWhichIsA("BasePart", true)
+					if firstPart then
 						inst:PivotTo(CFrame.new(pos))
-					else
-						local firstPart = inst:FindFirstChildWhichIsA("BasePart", true)
-						if firstPart then
-							inst:PivotTo(CFrame.new(pos))
-						end
 					end
 				end
 			end
 		end
-		pcall(function()
-			Selection:Set(insertedInstances)
-		end)
-		-- ▼ ReadonlyArray.map ▼
-		local _newValue = table.create(#insertedInstances)
-		local _callback = function(inst)
-			return {
-				name = inst.Name,
-				className = inst.ClassName,
-				path = getInstancePath(inst),
-			}
-		end
-		for _k, _v in insertedInstances do
-			_newValue[_k] = _callback(_v, _k - 1, insertedInstances)
-		end
-		-- ▲ ReadonlyArray.map ▲
-		local resultInstances = _newValue
-		return {
-			success = true,
-			assetId = assetId,
-			parentPath = parentPath,
-			insertedCount = #insertedInstances,
-			instances = resultInstances,
-		}
+	end
+	-- Destroy the wrapper model
+	wrapperModel:Destroy()
+	-- Set undo waypoint
+	finishRecording(recordingId, true)
+	-- Select inserted instances
+	pcall(function()
+		Selection:Set(insertedInstances)
 	end)
-	if wrapperModel then
-		pcall(function()
-			wrapperModel:Destroy()
-		end)
-	end
-	finishRecording(recordingId, insertSuccess)
-	if not insertSuccess then
+	-- ▼ ReadonlyArray.map ▼
+	local _newValue = table.create(#insertedInstances)
+	local _callback = function(inst)
 		return {
-			error = `Failed to insert asset {assetId}: {tostring(insertResult)}`,
+			name = inst.Name,
+			className = inst.ClassName,
+			path = getInstancePath(inst),
 		}
 	end
-	return insertResult
+	for _k, _v in insertedInstances do
+		_newValue[_k] = _callback(_v, _k - 1, insertedInstances)
+	end
+	-- ▲ ReadonlyArray.map ▲
+	local resultInstances = _newValue
+	return {
+		success = true,
+		assetId = assetId,
+		parentPath = parentPath,
+		insertedCount = #insertedInstances,
+		instances = resultInstances,
+	}
 end
 local function previewAsset(requestData)
 	local assetId = requestData.assetId
@@ -723,35 +732,26 @@ local function previewAsset(requestData)
 		end
 		return node
 	end
-	local previewSuccess, previewResult = pcall(function()
-		local hierarchyRoots = {}
-		for _, child in wrapperModel:GetChildren() do
-			local _arg0 = buildHierarchy(child, 0)
-			table.insert(hierarchyRoots, _arg0)
-		end
-		return {
-			success = true,
-			assetId = assetId,
-			hierarchy = hierarchyRoots,
-			summary = {
-				totalInstances = totalInstances,
-				classCounts = classCounts,
-				hasScripts = hasScripts,
-				hasAnimations = hasAnimations,
-				hasSounds = hasSounds,
-				hasParticles = hasParticles,
-			},
-		}
-	end)
-	pcall(function()
-		wrapperModel:Destroy()
-	end)
-	if not previewSuccess then
-		return {
-			error = `Failed to preview asset {assetId}: {tostring(previewResult)}`,
-		}
+	local hierarchyRoots = {}
+	for _, child in wrapperModel:GetChildren() do
+		local _arg0 = buildHierarchy(child, 0)
+		table.insert(hierarchyRoots, _arg0)
 	end
-	return previewResult
+	-- CRITICAL: Destroy wrapper to prevent memory leak
+	wrapperModel:Destroy()
+	return {
+		success = true,
+		assetId = assetId,
+		hierarchy = hierarchyRoots,
+		summary = {
+			totalInstances = totalInstances,
+			classCounts = classCounts,
+			hasScripts = hasScripts,
+			hasAnimations = hasAnimations,
+			hasSounds = hasSounds,
+			hasParticles = hasParticles,
+		},
+	}
 end
 return {
 	insertAsset = insertAsset,
@@ -774,11 +774,30 @@ local getInstanceByPath = _binding.getInstanceByPath
 local _binding_1 = Recording
 local beginRecording = _binding_1.beginRecording
 local finishRecording = _binding_1.finishRecording
-local MATERIAL_BY_NAME = {}
-for _, enumItem in Enum.Material:GetEnumItems() do
-	local _name = enumItem.Name
-	MATERIAL_BY_NAME[_name] = enumItem
-end
+-- Material name lookup table
+local MATERIAL_NAMES = {
+	Plastic = Enum.Material.Plastic,
+	Wood = Enum.Material.Wood,
+	WoodPlanks = Enum.Material.WoodPlanks,
+	Slate = Enum.Material.Slate,
+	Concrete = Enum.Material.Concrete,
+	CorrodedMetal = Enum.Material.CorrodedMetal,
+	DiamondPlate = Enum.Material.DiamondPlate,
+	Foil = Enum.Material.Foil,
+	Grass = Enum.Material.Grass,
+	Ice = Enum.Material.Ice,
+	Marble = Enum.Material.Marble,
+	Granite = Enum.Material.Granite,
+	Brick = Enum.Material.Brick,
+	Pebble = Enum.Material.Pebble,
+	Sand = Enum.Material.Sand,
+	Fabric = Enum.Material.Fabric,
+	SmoothPlastic = Enum.Material.SmoothPlastic,
+	Metal = Enum.Material.Metal,
+	Neon = Enum.Material.Neon,
+	Glass = Enum.Material.Glass,
+	Cobblestone = Enum.Material.Cobblestone,
+}
 -- Shape class mapping
 local SHAPE_CLASSES = {
 	Block = "Part",
@@ -791,32 +810,6 @@ local PALETTE_KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 local function roundTo(n, decimals)
 	local mult = 10 ^ decimals
 	return math.round(n * mult) / mult
-end
-local function encodePaletteKey(index)
-	local base = #PALETTE_KEYS
-	local value = math.floor(index) + 1
-	local encoded = ""
-	while value > 0 do
-		value -= 1
-		local digit = value % base
-		local _arg0 = digit + 1
-		local _arg1 = digit + 1
-		encoded = string.sub(PALETTE_KEYS, _arg0, _arg1) .. encoded
-		value = math.floor(value / base)
-	end
-	return encoded
-end
-local function getVariantName(part)
-	local variantName = part.MaterialVariant
-	if variantName == "" then
-		local ok, variantAttr = pcall(function()
-			return part:GetAttribute("MaterialVariant")
-		end)
-		if ok and type(variantAttr) == "string" then
-			variantName = variantAttr
-		end
-	end
-	return variantName
 end
 local function exportBuild(requestData)
 	local instancePath = requestData.instancePath
@@ -888,10 +881,12 @@ local function exportBuild(requestData)
 		for _, part in baseParts do
 			local colorName = part.BrickColor.Name
 			local materialName = part.Material.Name
-			local variantName = getVariantName(part)
+			local variantName = part.MaterialVariant
 			local combo = if variantName ~= "" then `{colorName}|{materialName}|{variantName}` else `{colorName}|{materialName}`
 			if not (paletteMap[combo] ~= nil) then
-				local key = encodePaletteKey(keyIndex)
+				local _arg0 = keyIndex + 1
+				local _arg1 = keyIndex + 1
+				local key = string.sub(PALETTE_KEYS, _arg0, _arg1)
 				keyIndex += 1
 				paletteMap[combo] = key
 				if variantName ~= "" then
@@ -909,8 +904,7 @@ local function exportBuild(requestData)
 			local sz = part.Size
 			local colorName = part.BrickColor.Name
 			local materialName = part.Material.Name
-			local variantName = getVariantName(part)
-			local combo = if variantName ~= "" then `{colorName}|{materialName}|{variantName}` else `{colorName}|{materialName}`
+			local combo = `{colorName}|{materialName}`
 			local _condition_1 = paletteMap[combo]
 			if _condition_1 == nil then
 				_condition_1 = "a"
@@ -1079,8 +1073,8 @@ local function importBuild(requestData)
 					part.BrickColor = BrickColor.new(colorName)
 				end)
 				pcall(function()
-					local mat = MATERIAL_BY_NAME[materialName]
-					if mat ~= nil then
+					local mat = MATERIAL_NAMES[materialName]
+					if mat then
 						part.Material = mat
 					end
 				end)
@@ -1230,8 +1224,8 @@ local function importScene(requestData)
 						part.BrickColor = BrickColor.new(colorName)
 					end)
 					pcall(function()
-						local mat = MATERIAL_BY_NAME[materialName]
-						if mat ~= nil then
+						local mat = MATERIAL_NAMES[materialName]
+						if mat then
 							part.Material = mat
 						end
 					end)
@@ -1339,91 +1333,6 @@ local convertPropertyValue = _binding.convertPropertyValue
 local _binding_1 = Recording
 local beginRecording = _binding_1.beginRecording
 local finishRecording = _binding_1.finishRecording
-local function processObjectEntries(objects, createFn)
-	local results = {}
-	local successCount = 0
-	local failureCount = 0
-	local loopSuccess, loopError = pcall(function()
-		for _, entry in objects do
-			if not (type(entry) == "table") then
-				failureCount += 1
-				table.insert(results, {
-					success = false,
-					error = "Each object entry must be a table",
-				})
-				continue
-			end
-			local objData = entry
-			local className = objData.className
-			local parentPath = objData.parent
-			if not (className ~= "" and className) or not (parentPath ~= "" and parentPath) then
-				failureCount += 1
-				table.insert(results, {
-					success = false,
-					error = "Class name and parent are required",
-				})
-				continue
-			end
-			local entrySuccess, entryResult = pcall(function()
-				return createFn(objData)
-			end)
-			if not entrySuccess then
-				failureCount += 1
-				local _arg0 = {
-					success = false,
-					className = className,
-					parent = parentPath,
-					error = tostring(entryResult),
-				}
-				table.insert(results, _arg0)
-				continue
-			end
-			if entryResult.instance ~= nil then
-				successCount += 1
-				local _arg0 = {
-					success = true,
-					className = entryResult.className,
-					parent = entryResult.parentPath,
-					instancePath = getInstancePath(entryResult.instance),
-					name = entryResult.instance.Name,
-				}
-				table.insert(results, _arg0)
-			else
-				failureCount += 1
-				local _object = {
-					success = false,
-				}
-				local _left = "className"
-				local _condition = entryResult.className
-				if _condition == nil then
-					_condition = className
-				end
-				_object[_left] = _condition
-				local _left_1 = "parent"
-				local _condition_1 = entryResult.parentPath
-				if _condition_1 == nil then
-					_condition_1 = parentPath
-				end
-				_object[_left_1] = _condition_1
-				_object.error = entryResult.error
-				table.insert(results, _object)
-			end
-		end
-	end)
-	if not loopSuccess then
-		failureCount += 1
-		local _arg0 = {
-			success = false,
-			error = `Unexpected mass create failure: {tostring(loopError)}`,
-		}
-		table.insert(results, _arg0)
-	end
-	return {
-		results = results,
-		successCount = successCount,
-		failureCount = failureCount,
-	}
-end
 local function createObject(requestData)
 	local className = requestData.className
 	local parentPath = requestData.parent
@@ -1518,43 +1427,67 @@ local function massCreateObjects(requestData)
 			error = "Objects array is required",
 		}
 	end
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
 	local recordingId = beginRecording("Mass create objects")
-	local _binding_2 = processObjectEntries(objects, function(objData)
+	for _, objData in objects do
 		local className = objData.className
 		local parentPath = objData.parent
 		local name = objData.name
-		local parentInstance = getInstanceByPath(parentPath)
-		if not parentInstance then
-			return {
-				error = "Parent instance not found",
-				className = className,
-				parentPath = parentPath,
-			}
+		local _condition = className
+		if _condition ~= "" and _condition then
+			_condition = parentPath
 		end
-		local success, newInstance = pcall(function()
-			local instance = Instance.new(className)
-			if name ~= "" and name then
-				instance.Name = name
+		if _condition ~= "" and _condition then
+			local parentInstance = getInstanceByPath(parentPath)
+			if parentInstance then
+				local success, newInstance = pcall(function()
+					local instance = Instance.new(className)
+					if name ~= "" and name then
+						instance.Name = name
+					end
+					instance.Parent = parentInstance
+					return instance
+				end)
+				if success and newInstance then
+					successCount += 1
+					local _arg0 = {
+						success = true,
+						className = className,
+						parent = parentPath,
+						instancePath = getInstancePath(newInstance),
+						name = newInstance.Name,
+					}
+					table.insert(results, _arg0)
+				else
+					failureCount += 1
+					local _arg0 = {
+						success = false,
+						className = className,
+						parent = parentPath,
+						error = tostring(newInstance),
+					}
+					table.insert(results, _arg0)
+				end
+			else
+				failureCount += 1
+				local _arg0 = {
+					success = false,
+					className = className,
+					parent = parentPath,
+					error = "Parent instance not found",
+				}
+				table.insert(results, _arg0)
 			end
-			instance.Parent = parentInstance
-			return instance
-		end)
-		if not success or not newInstance then
-			return {
-				error = tostring(newInstance),
-				className = className,
-				parentPath = parentPath,
-			}
+		else
+			failureCount += 1
+			table.insert(results, {
+				success = false,
+				error = "Class name and parent are required",
+			})
 		end
-		return {
-			instance = newInstance,
-			className = className,
-			parentPath = parentPath,
-		}
-	end)
-	local results = _binding_2.results
-	local successCount = _binding_2.successCount
-	local failureCount = _binding_2.failureCount
+	end
 	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
@@ -1572,54 +1505,76 @@ local function massCreateObjectsWithProperties(requestData)
 			error = "Objects array is required",
 		}
 	end
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
 	local recordingId = beginRecording("Mass create objects with properties")
-	local _binding_2 = processObjectEntries(objects, function(objData)
+	for _, objData in objects do
 		local className = objData.className
 		local parentPath = objData.parent
 		local name = objData.name
-		local propertiesRaw = objData.properties
-		local properties = if type(propertiesRaw) == "table" then propertiesRaw else ({})
-		local parentInstance = getInstanceByPath(parentPath)
-		if not parentInstance then
-			return {
-				error = "Parent instance not found",
-				className = className,
-				parentPath = parentPath,
-			}
+		local properties = (objData.properties) or {}
+		local _condition = className
+		if _condition ~= "" and _condition then
+			_condition = parentPath
 		end
-		local success, newInstance = pcall(function()
-			local instance = Instance.new(className)
-			if name ~= "" and name then
-				instance.Name = name
-			end
-			instance.Parent = parentInstance
-			for propName, propValue in pairs(properties) do
-				pcall(function()
-					local propNameStr = tostring(propName)
-					local converted = convertPropertyValue(instance, propNameStr, propValue)
-					if converted ~= nil then
-						instance[propNameStr] = converted
+		if _condition ~= "" and _condition then
+			local parentInstance = getInstanceByPath(parentPath)
+			if parentInstance then
+				local success, newInstance = pcall(function()
+					local instance = Instance.new(className)
+					if name ~= "" and name then
+						instance.Name = name
 					end
+					instance.Parent = parentInstance
+					for propName, propValue in pairs(properties) do
+						pcall(function()
+							local converted = convertPropertyValue(instance, propName, propValue)
+							if converted ~= nil then
+								instance[propName] = converted
+							end
+						end)
+					end
+					return instance
 				end)
+				if success and newInstance then
+					successCount += 1
+					local _arg0 = {
+						success = true,
+						className = className,
+						parent = parentPath,
+						instancePath = getInstancePath(newInstance),
+						name = newInstance.Name,
+					}
+					table.insert(results, _arg0)
+				else
+					failureCount += 1
+					local _arg0 = {
+						success = false,
+						className = className,
+						parent = parentPath,
+						error = tostring(newInstance),
+					}
+					table.insert(results, _arg0)
+				end
+			else
+				failureCount += 1
+				local _arg0 = {
+					success = false,
+					className = className,
+					parent = parentPath,
+					error = "Parent instance not found",
+				}
+				table.insert(results, _arg0)
 			end
-			return instance
-		end)
-		if not success or not newInstance then
-			return {
-				error = tostring(newInstance),
-				className = className,
-				parentPath = parentPath,
-			}
+		else
+			failureCount += 1
+			table.insert(results, {
+				success = false,
+				error = "Class name and parent are required",
+			})
 		end
-		return {
-			instance = newInstance,
-			className = className,
-			parentPath = parentPath,
-		}
-	end)
-	local results = _binding_2.results
-	local successCount = _binding_2.successCount
-	local failureCount = _binding_2.failureCount
+	end
 	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
@@ -2822,6 +2777,7 @@ local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
 local readScriptSource = _binding.readScriptSource
+local splitLines = _binding.splitLines
 local function getFileTree(requestData)
 	local _condition = (requestData.path)
 	if _condition == nil then
@@ -3642,6 +3598,293 @@ local function grepScripts(requestData)
 		},
 	}
 end
+local function hashString(input)
+	local hash = 5381
+	for i = 1, #input do
+		local code = string.byte(input, i)
+		local _exp = hash * 33
+		local _condition = code
+		if _condition == nil then
+			_condition = 0
+		end
+		hash = (_exp + _condition) % 2147483647
+	end
+	return tostring(hash)
+end
+local function extractFunctionOutline(source, maxFunctions)
+	if maxFunctions == nil then
+		maxFunctions = 200
+	end
+	local lines = splitLines(source)
+	local outline = {}
+	for i = 0, #lines - 1 do
+		if #outline >= maxFunctions then
+			break
+		end
+		local line = lines[i + 1]
+		local trimmed = (string.gsub(line, "^%s+", ""))
+		local localFn = { string.match(trimmed, "^local%s+function%s+([%w_%.:]+)%s*%(") }
+		local _value = localFn[1]
+		if _value ~= "" and _value then
+			local _arg0 = {
+				name = localFn[1],
+				line = i + 1,
+				kind = "local_function",
+			}
+			table.insert(outline, _arg0)
+			continue
+		end
+		local globalFn = { string.match(trimmed, "^function%s+([%w_%.:]+)%s*%(") }
+		local _value_1 = globalFn[1]
+		if _value_1 ~= "" and _value_1 then
+			local _arg0 = {
+				name = globalFn[1],
+				line = i + 1,
+				kind = "function",
+			}
+			table.insert(outline, _arg0)
+			continue
+		end
+		local assignedFn = { string.match(trimmed, "^([%w_%.:]+)%s*=%s*function%s*%(") }
+		local _value_2 = assignedFn[1]
+		if _value_2 ~= "" and _value_2 then
+			local _arg0 = {
+				name = assignedFn[1],
+				line = i + 1,
+				kind = "assigned_function",
+			}
+			table.insert(outline, _arg0)
+		end
+	end
+	return outline
+end
+local function scriptIndex(requestData)
+	local _condition = (requestData.path)
+	if _condition == nil then
+		_condition = ""
+	end
+	local startPath = _condition
+	local _condition_1 = (requestData.includeOutline)
+	if _condition_1 == nil then
+		_condition_1 = false
+	end
+	local includeOutline = _condition_1
+	local _condition_2 = (requestData.includeHash)
+	if _condition_2 == nil then
+		_condition_2 = true
+	end
+	local includeHash = _condition_2
+	local _condition_3 = (requestData.maxScripts)
+	if _condition_3 == nil then
+		_condition_3 = 400
+	end
+	local maxScripts = math.max(1, _condition_3)
+	local startInstance = if startPath ~= "" then getInstanceByPath(startPath) else game
+	if not startInstance then
+		return {
+			error = `Path not found: {startPath}`,
+		}
+	end
+	local scripts = {}
+	local visitedInstances = 0
+	local truncated = false
+	local function walk(instance)
+		if truncated then
+			return nil
+		end
+		visitedInstances += 1
+		if instance:IsA("LuaSourceContainer") then
+			if #scripts >= maxScripts then
+				truncated = true
+				return nil
+			end
+			local source = readScriptSource(instance)
+			local lines = splitLines(source)
+			local entry = {
+				name = instance.Name,
+				className = instance.ClassName,
+				path = getInstancePath(instance),
+				lineCount = #lines,
+				sourceLength = #source,
+			}
+			if includeHash then
+				entry.hash = hashString(source)
+			end
+			if includeOutline then
+				entry.outline = extractFunctionOutline(source)
+			end
+			table.insert(scripts, entry)
+		end
+		for _, child in instance:GetChildren() do
+			walk(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	walk(startInstance)
+	return {
+		scripts = scripts,
+		count = #scripts,
+		truncated = truncated,
+		requestedPath = startPath,
+		visitedInstances = visitedInstances,
+		options = {
+			includeOutline = includeOutline,
+			includeHash = includeHash,
+			maxScripts = maxScripts,
+		},
+	}
+end
+local function isWordChar(ch)
+	if ch == nil or ch == "" then
+		return false
+	end
+	if ch == "_" then
+		return true
+	end
+	local start = string.find(ch, "[A-Za-z0-9]", 1)
+	return start ~= nil
+end
+local function findReferences(requestData)
+	local symbol = requestData.symbol
+	if not (symbol ~= "" and symbol) or symbol == "" then
+		return {
+			error = "symbol is required",
+		}
+	end
+	local _condition = (requestData.path)
+	if _condition == nil then
+		_condition = ""
+	end
+	local startPath = _condition
+	local _condition_1 = (requestData.caseSensitive)
+	if _condition_1 == nil then
+		_condition_1 = true
+	end
+	local caseSensitive = _condition_1
+	local _condition_2 = (requestData.exactWord)
+	if _condition_2 == nil then
+		_condition_2 = true
+	end
+	local exactWord = _condition_2
+	local _condition_3 = (requestData.maxResults)
+	if _condition_3 == nil then
+		_condition_3 = 300
+	end
+	local maxResults = math.max(1, _condition_3)
+	local classFilter = requestData.classFilter
+	local startInstance = if startPath ~= "" then getInstanceByPath(startPath) else game
+	if not startInstance then
+		return {
+			error = `Path not found: {startPath}`,
+		}
+	end
+	local matches = {}
+	local scriptsSearched = 0
+	local scriptsMatched = 0
+	local truncated = false
+	local searchNeedle = if caseSensitive then symbol else string.lower(symbol)
+	local function walk(instance)
+		if truncated then
+			return nil
+		end
+		if instance:IsA("LuaSourceContainer") then
+			local _condition_4 = classFilter
+			if _condition_4 ~= "" and _condition_4 then
+				local _exp = string.lower(instance.ClassName)
+				local _arg0 = string.lower(classFilter)
+				local _value = (string.find(_exp, _arg0))
+				_condition_4 = not (_value ~= 0 and _value == _value and _value)
+			end
+			if _condition_4 ~= "" and _condition_4 then
+				return nil
+			end
+			scriptsSearched += 1
+			local source = readScriptSource(instance)
+			local lines = splitLines(source)
+			local localMatches = 0
+			for i = 0, #lines - 1 do
+				if truncated then
+					break
+				end
+				local line = lines[i + 1]
+				local haystack = if caseSensitive then line else string.lower(line)
+				local searchFrom = 1
+				while true do
+					local startCol, endCol = string.find(haystack, searchNeedle, searchFrom, true)
+					if startCol == nil or endCol == nil then
+						break
+					end
+					local valid = true
+					if exactWord then
+						local _result
+						if startCol > 1 then
+							local _arg0 = startCol - 1
+							local _arg1 = startCol - 1
+							_result = string.sub(line, _arg0, _arg1)
+						else
+							_result = nil
+						end
+						local before = _result
+						local _result_1
+						if endCol < #line then
+							local _arg0 = endCol + 1
+							local _arg1 = endCol + 1
+							_result_1 = string.sub(line, _arg0, _arg1)
+						else
+							_result_1 = nil
+						end
+						local after = _result_1
+						valid = not isWordChar(before) and not isWordChar(after)
+					end
+					if valid then
+						local _arg0 = {
+							instancePath = getInstancePath(instance),
+							scriptName = instance.Name,
+							className = instance.ClassName,
+							line = i + 1,
+							column = startCol,
+							text = line,
+						}
+						table.insert(matches, _arg0)
+						localMatches += 1
+						if #matches >= maxResults then
+							truncated = true
+							break
+						end
+					end
+					searchFrom = endCol + 1
+				end
+			end
+			if localMatches > 0 then
+				scriptsMatched += 1
+			end
+		end
+		for _, child in instance:GetChildren() do
+			walk(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	walk(startInstance)
+	return {
+		symbol = symbol,
+		matches = matches,
+		matchCount = #matches,
+		scriptsSearched = scriptsSearched,
+		scriptsMatched = scriptsMatched,
+		truncated = truncated,
+		options = {
+			caseSensitive = caseSensitive,
+			exactWord = exactWord,
+			maxResults = maxResults,
+			classFilter = classFilter,
+			path = startPath,
+		},
+	}
+end
 return {
 	getFileTree = getFileTree,
 	searchFiles = searchFiles,
@@ -3654,11 +3897,359 @@ return {
 	getClassInfo = getClassInfo,
 	getProjectStructure = getProjectStructure,
 	grepScripts = grepScripts,
+	scriptIndex = scriptIndex,
+	findReferences = findReferences,
 }
 ]]></string>
           </Properties>
         </Item>
         <Item class="ModuleScript" referent="10">
+          <Properties>
+            <string name="Name">SceneHandlers</string>
+            <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
+local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
+local Utils = TS.import(script, script.Parent.Parent, "Utils")
+local _binding = Utils
+local getInstancePath = _binding.getInstancePath
+local getInstanceByPath = _binding.getInstanceByPath
+local snapshots = {}
+local snapshotOrder = {}
+local MAX_STORED_SNAPSHOTS = 20
+local function formatNumber(value)
+	return tostring(math.round(value * 1000) / 1000)
+end
+local function serializePropertyValue(value)
+	local _value = value
+	local t = typeof(_value)
+	if t == "Vector3" then
+		local v = value
+		return `Vector3({formatNumber(v.X)}, {formatNumber(v.Y)}, {formatNumber(v.Z)})`
+	end
+	if t == "Vector2" then
+		local v = value
+		return `Vector2({formatNumber(v.X)}, {formatNumber(v.Y)})`
+	end
+	if t == "UDim2" then
+		local v = value
+		return `UDim2({formatNumber(v.X.Scale)}, {v.X.Offset}, {formatNumber(v.Y.Scale)}, {v.Y.Offset})`
+	end
+	if t == "Color3" then
+		local v = value
+		return `Color3({formatNumber(v.R)}, {formatNumber(v.G)}, {formatNumber(v.B)})`
+	end
+	if t == "CFrame" then
+		local v = value
+		return `CFrame({formatNumber(v.Position.X)}, {formatNumber(v.Position.Y)}, {formatNumber(v.Position.Z)})`
+	end
+	if t == "BrickColor" then
+		return value.Name
+	end
+	if t == "EnumItem" then
+		local e = value
+		return `{e.EnumType}.{e.Name}`
+	end
+	if value == nil then
+		return "nil"
+	end
+	return tostring(value)
+end
+local function safeReadProperty(instance, propertyName)
+	local ok, value = pcall(function()
+		return instance[propertyName]
+	end)
+	if not ok then
+		return nil
+	end
+	return serializePropertyValue(value)
+end
+local function collectTrackedProperties(instance)
+	local properties = {}
+	local baseProps = { "Name" }
+	for _, prop in baseProps do
+		local value = safeReadProperty(instance, prop)
+		if value ~= nil then
+			properties[prop] = value
+		end
+	end
+	if instance:IsA("BasePart") then
+		local partProps = { "Anchored", "CanCollide", "Transparency", "Material", "BrickColor", "Position", "Size", "Orientation" }
+		for _, prop in partProps do
+			local value = safeReadProperty(instance, prop)
+			if value ~= nil then
+				properties[prop] = value
+			end
+		end
+	end
+	if instance:IsA("GuiObject") then
+		local guiProps = { "Visible", "Active", "Position", "Size", "ZIndex" }
+		for _, prop in guiProps do
+			local value = safeReadProperty(instance, prop)
+			if value ~= nil then
+				properties[prop] = value
+			end
+		end
+		if instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox") then
+			local textValue = safeReadProperty(instance, "Text")
+			if textValue ~= nil then
+				properties.Text = textValue
+			end
+		end
+	end
+	if instance:IsA("LuaSourceContainer") then
+		local enabledValue = safeReadProperty(instance, "Enabled")
+		if enabledValue ~= nil then
+			properties.Enabled = enabledValue
+		end
+	end
+	if instance:IsA("ValueBase") then
+		local value = safeReadProperty(instance, "Value")
+		if value ~= nil then
+			properties.Value = value
+		end
+	end
+	return properties
+end
+local function saveSnapshot(snapshot)
+	local _id = snapshot.id
+	local _snapshot = snapshot
+	snapshots[_id] = _snapshot
+	local _id_1 = snapshot.id
+	table.insert(snapshotOrder, _id_1)
+	while #snapshotOrder > MAX_STORED_SNAPSHOTS do
+		local oldest = table.remove(snapshotOrder, 1)
+		if oldest ~= "" and oldest then
+			snapshots[oldest] = nil
+		end
+	end
+end
+local function snapshotScene(requestData)
+	local _condition = (requestData.path)
+	if _condition == nil then
+		_condition = "game.Workspace"
+	end
+	local rootPath = _condition
+	local _condition_1 = (requestData.maxDepth)
+	if _condition_1 == nil then
+		_condition_1 = 4
+	end
+	local maxDepth = math.max(0, _condition_1)
+	local _condition_2 = (requestData.maxNodes)
+	if _condition_2 == nil then
+		_condition_2 = 3000
+	end
+	local maxNodes = math.max(1, _condition_2)
+	local _condition_3 = (requestData.includeProperties)
+	if _condition_3 == nil then
+		_condition_3 = true
+	end
+	local includeProperties = _condition_3
+	local _condition_4 = (requestData.includeData)
+	if _condition_4 == nil then
+		_condition_4 = false
+	end
+	local includeData = _condition_4
+	local rootInstance = getInstanceByPath(rootPath)
+	if not rootInstance then
+		return {
+			error = `Path not found: {rootPath}`,
+		}
+	end
+	local entries = {}
+	local nodeCount = 0
+	local truncated = false
+	local function walk(instance, depth, parentPath)
+		if truncated then
+			return nil
+		end
+		if nodeCount >= maxNodes then
+			truncated = true
+			return nil
+		end
+		nodeCount += 1
+		local path = getInstancePath(instance)
+		entries[path] = {
+			path = path,
+			name = instance.Name,
+			className = instance.ClassName,
+			parentPath = parentPath,
+			depth = depth,
+			childCount = #instance:GetChildren(),
+			properties = if includeProperties then collectTrackedProperties(instance) else {},
+		}
+		if depth >= maxDepth then
+			return nil
+		end
+		for _, child in instance:GetChildren() do
+			walk(child, depth + 1, path)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	walk(rootInstance, 0, nil)
+	local _condition_5 = (requestData.snapshotId)
+	if _condition_5 == nil then
+		_condition_5 = `snapshot_{math.floor(tick() * 1000)}_{math.random(1000, 9999)}`
+	end
+	local snapshotId = _condition_5
+	local snapshot = {
+		id = snapshotId,
+		createdAt = tick(),
+		rootPath = rootPath,
+		maxDepth = maxDepth,
+		nodeCount = nodeCount,
+		truncated = truncated,
+		entries = entries,
+	}
+	saveSnapshot(snapshot)
+	return {
+		success = true,
+		snapshotId = snapshotId,
+		createdAt = snapshot.createdAt,
+		rootPath = rootPath,
+		maxDepth = maxDepth,
+		nodeCount = nodeCount,
+		truncated = truncated,
+		includeProperties = includeProperties,
+		data = if includeData then entries else nil,
+	}
+end
+local function diffScene(requestData)
+	local fromSnapshotId = requestData.fromSnapshotId
+	local toSnapshotId = requestData.toSnapshotId
+	if not (fromSnapshotId ~= "" and fromSnapshotId) or not (toSnapshotId ~= "" and toSnapshotId) then
+		return {
+			error = "fromSnapshotId and toSnapshotId are required",
+		}
+	end
+	local fromSnapshot = snapshots[fromSnapshotId]
+	local toSnapshot = snapshots[toSnapshotId]
+	if not fromSnapshot then
+		return {
+			error = `Snapshot not found: {fromSnapshotId}`,
+		}
+	end
+	if not toSnapshot then
+		return {
+			error = `Snapshot not found: {toSnapshotId}`,
+		}
+	end
+	local _condition = (requestData.maxChanges)
+	if _condition == nil then
+		_condition = 500
+	end
+	local maxChanges = math.max(1, _condition)
+	local detailCount = 0
+	local detailTruncated = false
+	local added = {}
+	local removed = {}
+	local changed = {}
+	local addedCount = 0
+	local removedCount = 0
+	local changedCount = 0
+	local function canAddDetail()
+		if detailCount < maxChanges then
+			detailCount += 1
+			return true
+		end
+		detailTruncated = true
+		return false
+	end
+	for path, toEntry in pairs(toSnapshot.entries) do
+		local fromEntry = fromSnapshot.entries[path]
+		if not fromEntry then
+			addedCount += 1
+			if canAddDetail() then
+				local _arg0 = {
+					path = toEntry.path,
+					name = toEntry.name,
+					className = toEntry.className,
+					parentPath = toEntry.parentPath,
+				}
+				table.insert(added, _arg0)
+			end
+			continue
+		end
+		local propertyChanges = {}
+		local hasChanges = false
+		if fromEntry.className ~= toEntry.className or fromEntry.name ~= toEntry.name then
+			hasChanges = true
+		end
+		local seenKeys = {}
+		for key, value in pairs(fromEntry.properties) do
+			seenKeys[key] = true
+			if toEntry.properties[key] ~= value then
+				hasChanges = true
+				propertyChanges[key] = {
+					from = value,
+					to = toEntry.properties[key],
+				}
+			end
+		end
+		for key, value in pairs(toEntry.properties) do
+			if seenKeys[key] ~= nil then
+				continue
+			end
+			hasChanges = true
+			propertyChanges[key] = {
+				from = fromEntry.properties[key],
+				to = value,
+			}
+		end
+		if hasChanges then
+			changedCount += 1
+			if canAddDetail() then
+				local _arg0 = {
+					path = toEntry.path,
+					fromClassName = fromEntry.className,
+					toClassName = toEntry.className,
+					fromName = fromEntry.name,
+					toName = toEntry.name,
+					propertyChanges = propertyChanges,
+				}
+				table.insert(changed, _arg0)
+			end
+		end
+	end
+	for path, fromEntry in pairs(fromSnapshot.entries) do
+		if toSnapshot.entries[path] then
+			continue
+		end
+		removedCount += 1
+		if canAddDetail() then
+			local _arg0 = {
+				path = fromEntry.path,
+				name = fromEntry.name,
+				className = fromEntry.className,
+				parentPath = fromEntry.parentPath,
+			}
+			table.insert(removed, _arg0)
+		end
+	end
+	return {
+		success = true,
+		fromSnapshotId = fromSnapshotId,
+		toSnapshotId = toSnapshotId,
+		summary = {
+			added = addedCount,
+			removed = removedCount,
+			changed = changedCount,
+			detailCount = detailCount,
+			detailTruncated = detailTruncated,
+		},
+		added = added,
+		removed = removed,
+		changed = changed,
+	}
+end
+return {
+	snapshotScene = snapshotScene,
+	diffScene = diffScene,
+}
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="11">
           <Properties>
             <string name="Name">ScriptHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -4170,25 +4761,684 @@ local function deleteScriptLines(requestData)
 		error = `Failed to delete script lines: {result}`,
 	}
 end
+local function applyPatchEditToSource(source, edit)
+	local _condition = (edit.operation)
+	if _condition == nil then
+		_condition = "replace"
+	end
+	local operation = _condition
+	if operation == "set" then
+		local nextSource = edit.source
+		if nextSource == nil then
+			error("set operation requires source")
+		end
+		local normalizedSource = normalizeEscapes(nextSource)
+		return {
+			source = normalizedSource,
+			summary = {
+				operation = operation,
+				newSourceLength = #normalizedSource,
+			},
+		}
+	end
+	local lines, hadTrailingNewline = splitLines(source)
+	local totalLines = #lines
+	if operation == "replace" then
+		local startLine = edit.startLine
+		local endLine = edit.endLine
+		local newContentRaw = edit.newContent
+		if not (startLine ~= 0 and startLine == startLine and startLine) or not (endLine ~= 0 and endLine == endLine and endLine) or newContentRaw == nil then
+			error("replace operation requires startLine, endLine, and newContent")
+		end
+		if startLine < 1 or startLine > totalLines then
+			error(`startLine out of range (1-{totalLines})`)
+		end
+		if endLine < startLine or endLine > totalLines then
+			error(`endLine out of range ({startLine}-{totalLines})`)
+		end
+		local newLines = splitLines(normalizeEscapes(newContentRaw))
+		local resultLines = {}
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < startLine - 1) then
+					break
+				end
+				local _arg0 = lines[i + 1]
+				table.insert(resultLines, _arg0)
+			end
+		end
+		for _, line in newLines do
+			table.insert(resultLines, line)
+		end
+		do
+			local i = endLine
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < totalLines) then
+					break
+				end
+				local _arg0 = lines[i + 1]
+				table.insert(resultLines, _arg0)
+			end
+		end
+		local updatedSource = joinLines(resultLines, hadTrailingNewline)
+		return {
+			source = updatedSource,
+			summary = {
+				operation = operation,
+				startLine = startLine,
+				endLine = endLine,
+				linesRemoved = endLine - startLine + 1,
+				linesAdded = #newLines,
+			},
+		}
+	end
+	if operation == "insert" then
+		local _condition_1 = (edit.afterLine)
+		if _condition_1 == nil then
+			_condition_1 = 0
+		end
+		local afterLine = _condition_1
+		local newContentRaw = edit.newContent
+		if newContentRaw == nil then
+			error("insert operation requires newContent")
+		end
+		if afterLine < 0 or afterLine > totalLines then
+			error(`afterLine out of range (0-{totalLines})`)
+		end
+		local newLines = splitLines(normalizeEscapes(newContentRaw))
+		local resultLines = {}
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < afterLine) then
+					break
+				end
+				local _arg0 = lines[i + 1]
+				table.insert(resultLines, _arg0)
+			end
+		end
+		for _, line in newLines do
+			table.insert(resultLines, line)
+		end
+		do
+			local i = afterLine
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < totalLines) then
+					break
+				end
+				local _arg0 = lines[i + 1]
+				table.insert(resultLines, _arg0)
+			end
+		end
+		local updatedSource = joinLines(resultLines, hadTrailingNewline)
+		return {
+			source = updatedSource,
+			summary = {
+				operation = operation,
+				afterLine = afterLine,
+				linesAdded = #newLines,
+			},
+		}
+	end
+	if operation == "delete" then
+		local startLine = edit.startLine
+		local endLine = edit.endLine
+		if not (startLine ~= 0 and startLine == startLine and startLine) or not (endLine ~= 0 and endLine == endLine and endLine) then
+			error("delete operation requires startLine and endLine")
+		end
+		if startLine < 1 or startLine > totalLines then
+			error(`startLine out of range (1-{totalLines})`)
+		end
+		if endLine < startLine or endLine > totalLines then
+			error(`endLine out of range ({startLine}-{totalLines})`)
+		end
+		local resultLines = {}
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < startLine - 1) then
+					break
+				end
+				local _arg0 = lines[i + 1]
+				table.insert(resultLines, _arg0)
+			end
+		end
+		do
+			local i = endLine
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < totalLines) then
+					break
+				end
+				local _arg0 = lines[i + 1]
+				table.insert(resultLines, _arg0)
+			end
+		end
+		local updatedSource = joinLines(resultLines, hadTrailingNewline)
+		return {
+			source = updatedSource,
+			summary = {
+				operation = operation,
+				startLine = startLine,
+				endLine = endLine,
+				linesDeleted = endLine - startLine + 1,
+			},
+		}
+	end
+	error(`Unsupported operation: {operation}`)
+end
+local function applyPatchBatch(requestData)
+	local edits = requestData.edits
+	local _condition = (requestData.dryRun)
+	if _condition == nil then
+		_condition = false
+	end
+	local dryRun = _condition
+	if not edits or not (type(edits) == "table") or #edits == 0 then
+		return {
+			error = "edits array is required",
+		}
+	end
+	local scriptStates = {}
+	local editResults = {}
+	for i = 0, #edits - 1 do
+		local edit = edits[i + 1]
+		local instancePath = edit.instancePath
+		if not (instancePath ~= "" and instancePath) then
+			return {
+				error = `Edit {i + 1} is missing instancePath`,
+				failedEditIndex = i + 1,
+			}
+		end
+		local state = scriptStates[instancePath]
+		if not state then
+			local instance = getInstanceByPath(instancePath)
+			if not instance then
+				return {
+					error = `Instance not found: {instancePath}`,
+					failedEditIndex = i + 1,
+				}
+			end
+			if not instance:IsA("LuaSourceContainer") then
+				return {
+					error = `Instance is not a script-like object: {instance.ClassName}`,
+					failedEditIndex = i + 1,
+				}
+			end
+			local originalSource = readScriptSource(instance)
+			state = {
+				instance = instance,
+				originalSource = originalSource,
+				workingSource = originalSource,
+			}
+			local _state = state
+			scriptStates[instancePath] = _state
+		end
+		local ok, result = pcall(function()
+			local applyResult = applyPatchEditToSource(state.workingSource, edit)
+			state.workingSource = applyResult.source
+			return applyResult
+		end)
+		if not ok then
+			return {
+				error = `Edit {i + 1} failed: {result}`,
+				failedEditIndex = i + 1,
+				instancePath = instancePath,
+			}
+		end
+		local _condition_1 = (edit.operation)
+		if _condition_1 == nil then
+			_condition_1 = "replace"
+		end
+		local op = _condition_1
+		local typedResult = result
+		local _object = {
+			index = i + 1,
+			instancePath = instancePath,
+			operation = op,
+			newSourceLength = #typedResult.source,
+		}
+		for _k, _v in typedResult.summary do
+			_object[_k] = _v
+		end
+		table.insert(editResults, _object)
+	end
+	if dryRun then
+		local _object = {
+			success = true,
+			dryRun = true,
+			edits = editResults,
+		}
+		local _left = "summary"
+		local _object_1 = {
+			totalEdits = #edits,
+		}
+		local _left_1 = "scriptsAffected"
+		-- ▼ ReadonlyMap.size ▼
+		local _size = 0
+		for _ in scriptStates do
+			_size += 1
+		end
+		-- ▲ ReadonlyMap.size ▲
+		_object_1[_left_1] = _size
+		_object[_left] = _object_1
+		return _object
+	end
+	local recordingId = beginRecording(`Apply patch batch ({#edits} edits)`)
+	local appliedPaths = {}
+	for instancePath, state in scriptStates do
+		local ok, err = pcall(function()
+			ScriptEditorService:UpdateSourceAsync(state.instance, function()
+				return state.workingSource
+			end)
+		end)
+		if not ok then
+			local rollbackFailures = {}
+			for _, path in appliedPaths do
+				local rollbackState = scriptStates[path]
+				if not rollbackState then
+					continue
+				end
+				local rollbackOk, rollbackErr = pcall(function()
+					ScriptEditorService:UpdateSourceAsync(rollbackState.instance, function()
+						return rollbackState.originalSource
+					end)
+				end)
+				if not rollbackOk then
+					local _arg0 = {
+						path = path,
+						error = tostring(rollbackErr),
+					}
+					table.insert(rollbackFailures, _arg0)
+				end
+			end
+			finishRecording(recordingId, false)
+			return {
+				error = `Failed to apply patch on {instancePath}: {err}`,
+				rolledBack = true,
+				rollbackFailures = rollbackFailures,
+			}
+		end
+		table.insert(appliedPaths, instancePath)
+	end
+	finishRecording(recordingId, true)
+	local _object = {
+		success = true,
+		dryRun = false,
+		edits = editResults,
+	}
+	local _left = "summary"
+	local _object_1 = {
+		totalEdits = #edits,
+	}
+	local _left_1 = "scriptsAffected"
+	-- ▼ ReadonlyMap.size ▼
+	local _size = 0
+	for _ in scriptStates do
+		_size += 1
+	end
+	-- ▲ ReadonlyMap.size ▲
+	_object_1[_left_1] = _size
+	_object[_left] = _object_1
+	return _object
+end
+local function isSymbolChar(ch)
+	if ch == nil or ch == "" then
+		return false
+	end
+	if ch == "_" then
+		return true
+	end
+	local start = string.find(ch, "[A-Za-z0-9]", 1)
+	return start ~= nil
+end
+local function replaceSymbolInLine(line, oldName, newName, caseSensitive, exactWord)
+	local needle = if caseSensitive then oldName else string.lower(oldName)
+	local haystack = if caseSensitive then line else string.lower(line)
+	local searchFrom = 1
+	local rebuilt = ""
+	local replacementCount = 0
+	local columns = {}
+	while true do
+		local startCol, endCol = string.find(haystack, needle, searchFrom, true)
+		if startCol == nil or endCol == nil then
+			break
+		end
+		local _line = line
+		local _searchFrom = searchFrom
+		local _arg1 = startCol - 1
+		rebuilt ..= string.sub(_line, _searchFrom, _arg1)
+		local valid = true
+		if exactWord then
+			local _result
+			if startCol > 1 then
+				local _line_1 = line
+				local _arg0 = startCol - 1
+				local _arg1_1 = startCol - 1
+				_result = string.sub(_line_1, _arg0, _arg1_1)
+			else
+				_result = nil
+			end
+			local before = _result
+			local _result_1
+			if endCol < #line then
+				local _line_1 = line
+				local _arg0 = endCol + 1
+				local _arg1_1 = endCol + 1
+				_result_1 = string.sub(_line_1, _arg0, _arg1_1)
+			else
+				_result_1 = nil
+			end
+			local after = _result_1
+			valid = not isSymbolChar(before) and not isSymbolChar(after)
+		end
+		if valid then
+			rebuilt ..= newName
+			replacementCount += 1
+			table.insert(columns, startCol)
+		else
+			rebuilt ..= string.sub(line, startCol, endCol)
+		end
+		searchFrom = endCol + 1
+	end
+	if searchFrom <= #line then
+		local _line = line
+		local _searchFrom = searchFrom
+		rebuilt ..= string.sub(_line, _searchFrom)
+	end
+	return {
+		line = rebuilt,
+		replacementCount = replacementCount,
+		columns = columns,
+	}
+end
+local function replaceSymbolInSource(source, oldName, newName, caseSensitive, exactWord)
+	local lines, hadTrailingNewline = splitLines(source)
+	local outputLines = {}
+	local changedLines = {}
+	local totalReplacements = 0
+	for i = 0, #lines - 1 do
+		local line = lines[i + 1]
+		local replaced = replaceSymbolInLine(line, oldName, newName, caseSensitive, exactWord)
+		local _line = replaced.line
+		table.insert(outputLines, _line)
+		if replaced.replacementCount > 0 then
+			totalReplacements += replaced.replacementCount
+			local _arg0 = {
+				line = i + 1,
+				replacements = replaced.replacementCount,
+				columns = replaced.columns,
+				before = line,
+				after = replaced.line,
+			}
+			table.insert(changedLines, _arg0)
+		end
+	end
+	return {
+		source = joinLines(outputLines, hadTrailingNewline),
+		totalReplacements = totalReplacements,
+		changedLines = changedLines,
+	}
+end
+local function renameSymbol(requestData)
+	local oldName = requestData.oldName
+	local newName = requestData.newName
+	if not (oldName ~= "" and oldName) or not (newName ~= "" and newName) then
+		return {
+			error = "oldName and newName are required",
+		}
+	end
+	if oldName == newName then
+		return {
+			error = "oldName and newName must be different",
+		}
+	end
+	local _condition = (requestData.path)
+	if _condition == nil then
+		_condition = ""
+	end
+	local startPath = _condition
+	local classFilter = requestData.classFilter
+	local _condition_1 = (requestData.caseSensitive)
+	if _condition_1 == nil then
+		_condition_1 = true
+	end
+	local caseSensitive = _condition_1
+	local _condition_2 = (requestData.exactWord)
+	if _condition_2 == nil then
+		_condition_2 = true
+	end
+	local exactWord = _condition_2
+	local _condition_3 = (requestData.dryRun)
+	if _condition_3 == nil then
+		_condition_3 = true
+	end
+	local dryRun = _condition_3
+	local _condition_4 = (requestData.maxResults)
+	if _condition_4 == nil then
+		_condition_4 = 2000
+	end
+	local maxResults = math.max(1, _condition_4)
+	local startInstance = if startPath ~= "" then getInstanceByPath(startPath) else game
+	if not startInstance then
+		return {
+			error = `Path not found: {startPath}`,
+		}
+	end
+	local updates = {}
+	local scriptsSearched = 0
+	local scriptsChanged = 0
+	local totalReplacements = 0
+	local truncated = false
+	local function walk(instance)
+		if truncated then
+			return nil
+		end
+		if instance:IsA("LuaSourceContainer") then
+			local _condition_5 = classFilter
+			if _condition_5 ~= "" and _condition_5 then
+				local _exp = string.lower(instance.ClassName)
+				local _arg0 = string.lower(classFilter)
+				local _value = (string.find(_exp, _arg0))
+				_condition_5 = not (_value ~= 0 and _value == _value and _value)
+			end
+			if _condition_5 ~= "" and _condition_5 then
+				return nil
+			end
+			scriptsSearched += 1
+			local originalSource = readScriptSource(instance)
+			local replaced = replaceSymbolInSource(originalSource, oldName, newName, caseSensitive, exactWord)
+			if replaced.totalReplacements > 0 then
+				if totalReplacements + replaced.totalReplacements > maxResults then
+					truncated = true
+					return nil
+				end
+				totalReplacements += replaced.totalReplacements
+				scriptsChanged += 1
+				local _arg0 = {
+					instance = instance,
+					instancePath = getInstancePath(instance),
+					originalSource = originalSource,
+					updatedSource = replaced.source,
+					replacementCount = replaced.totalReplacements,
+					changedLines = replaced.changedLines,
+				}
+				table.insert(updates, _arg0)
+			end
+		end
+		for _, child in instance:GetChildren() do
+			walk(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	walk(startInstance)
+	if truncated then
+		return {
+			error = `Rename scan exceeded maxResults ({maxResults}). Increase maxResults or narrow the path.`,
+			dryRun = true,
+			oldName = oldName,
+			newName = newName,
+			scriptsSearched = scriptsSearched,
+			scriptsChanged = scriptsChanged,
+			totalReplacements = totalReplacements,
+		}
+	end
+	if dryRun then
+		local _object = {
+			success = true,
+			dryRun = true,
+			oldName = oldName,
+			newName = newName,
+			summary = {
+				scriptsSearched = scriptsSearched,
+				scriptsChanged = scriptsChanged,
+				totalReplacements = totalReplacements,
+			},
+		}
+		local _left = "changes"
+		-- ▼ ReadonlyArray.map ▼
+		local _newValue = table.create(#updates)
+		local _callback = function(u)
+			return {
+				instancePath = u.instancePath,
+				replacementCount = u.replacementCount,
+				changedLines = u.changedLines,
+			}
+		end
+		for _k, _v in updates do
+			_newValue[_k] = _callback(_v, _k - 1, updates)
+		end
+		-- ▲ ReadonlyArray.map ▲
+		_object[_left] = _newValue
+		return _object
+	end
+	local recordingId = beginRecording(`Rename symbol {oldName} -> {newName}`)
+	local appliedUpdates = {}
+	for _, update in updates do
+		local ok, err = pcall(function()
+			ScriptEditorService:UpdateSourceAsync(update.instance, function()
+				return update.updatedSource
+			end)
+		end)
+		if not ok then
+			local rollbackFailures = {}
+			for _1, applied in appliedUpdates do
+				local rollbackOk, rollbackErr = pcall(function()
+					ScriptEditorService:UpdateSourceAsync(applied.instance, function()
+						return applied.originalSource
+					end)
+				end)
+				if not rollbackOk then
+					local _arg0 = {
+						instancePath = applied.instancePath,
+						error = tostring(rollbackErr),
+					}
+					table.insert(rollbackFailures, _arg0)
+				end
+			end
+			finishRecording(recordingId, false)
+			return {
+				error = `Failed to rename in {update.instancePath}: {err}`,
+				rolledBack = true,
+				rollbackFailures = rollbackFailures,
+			}
+		end
+		table.insert(appliedUpdates, update)
+	end
+	finishRecording(recordingId, true)
+	local _object = {
+		success = true,
+		dryRun = false,
+		oldName = oldName,
+		newName = newName,
+		summary = {
+			scriptsSearched = scriptsSearched,
+			scriptsChanged = scriptsChanged,
+			totalReplacements = totalReplacements,
+		},
+	}
+	local _left = "changes"
+	-- ▼ ReadonlyArray.map ▼
+	local _newValue = table.create(#updates)
+	local _callback = function(u)
+		return {
+			instancePath = u.instancePath,
+			replacementCount = u.replacementCount,
+			changedLines = u.changedLines,
+		}
+	end
+	for _k, _v in updates do
+		_newValue[_k] = _callback(_v, _k - 1, updates)
+	end
+	-- ▲ ReadonlyArray.map ▲
+	_object[_left] = _newValue
+	return _object
+end
 return {
 	getScriptSource = getScriptSource,
 	setScriptSource = setScriptSource,
 	editScriptLines = editScriptLines,
 	insertScriptLines = insertScriptLines,
 	deleteScriptLines = deleteScriptLines,
+	applyPatchBatch = applyPatchBatch,
+	renameSymbol = renameSymbol,
 }
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="11">
+        <Item class="ModuleScript" referent="12">
           <Properties>
             <string name="Name">TestHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
 local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local LogService = TS.import(script, script.Parent.Parent.Parent, "node_modules", "@rbxts", "services").LogService
+local Utils = TS.import(script, script.Parent.Parent, "Utils")
 local StudioTestService = game:GetService("StudioTestService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ScriptEditorService = game:GetService("ScriptEditorService")
+local _binding = Utils
+local getInstancePath = _binding.getInstancePath
+local getInstanceByPath = _binding.getInstanceByPath
+local readScriptSource = _binding.readScriptSource
+local splitLines = _binding.splitLines
 local STOP_SIGNAL = "__MCP_STOP__"
 local testRunning = false
 local outputBuffer = {}
@@ -4196,6 +5446,34 @@ local logConnection
 local testResult
 local testError
 local stopListenerScript
+local LOG_RING_CAPACITY = 2000
+local bufferedLogs = {}
+local nextLogId = 1
+local globalLogConnection
+local function addBufferedLog(message, messageType)
+	local entry = {
+		id = nextLogId,
+		message = message,
+		messageType = messageType,
+		timestamp = tick(),
+	}
+	nextLogId += 1
+	table.insert(bufferedLogs, entry)
+	while #bufferedLogs > LOG_RING_CAPACITY do
+		table.remove(bufferedLogs, 1)
+	end
+end
+local function ensureGlobalLogCapture()
+	if globalLogConnection then
+		return nil
+	end
+	globalLogConnection = LogService.MessageOut:Connect(function(message, messageType)
+		if message == STOP_SIGNAL then
+			return nil
+		end
+		addBufferedLog(message, messageType.Name)
+	end)
+end
 local function buildStopListenerSource()
 	return `local LogService = game:GetService("LogService")\
 local StudioTestService = game:GetService("StudioTestService")\
@@ -4244,6 +5522,7 @@ local function startPlaytest(requestData)
 	outputBuffer = {}
 	testResult = nil
 	testError = nil
+	ensureGlobalLogCapture()
 	cleanupStopListener()
 	logConnection = LogService.MessageOut:Connect(function(message, messageType)
 		if message == STOP_SIGNAL then
@@ -4320,16 +5599,361 @@ local function getPlaytestOutput(_requestData)
 	_object.testError = testError
 	return _object
 end
+local function parseLineFromError(message)
+	local lineStr = string.match(message, ":(%d+):")
+	if not (lineStr ~= "" and lineStr) then
+		return nil
+	end
+	local _condition = tonumber(lineStr)
+	if _condition == nil then
+		_condition = nil
+	end
+	return _condition
+end
+local function runTests(requestData)
+	local _condition = (requestData.path)
+	if _condition == nil then
+		_condition = ""
+	end
+	local startPath = _condition
+	local _condition_1 = (requestData.includeWarnings)
+	if _condition_1 == nil then
+		_condition_1 = true
+	end
+	local includeWarnings = _condition_1
+	local _condition_2 = (requestData.maxIssues)
+	if _condition_2 == nil then
+		_condition_2 = 200
+	end
+	local maxIssues = math.max(1, _condition_2)
+	local startInstance = if startPath ~= "" then getInstanceByPath(startPath) else game
+	if not startInstance then
+		return {
+			error = `Path not found: {startPath}`,
+		}
+	end
+	local issues = {}
+	local scriptsChecked = 0
+	local syntaxErrors = 0
+	local warnings = 0
+	local truncated = false
+	local warningPatterns = { {
+		code = "DEPRECATED_WAIT",
+		pattern = "wait(",
+		message = "Use task.wait() instead of wait()",
+	}, {
+		code = "DEPRECATED_CONNECT",
+		pattern = ":connect(",
+		message = "Use :Connect() instead of :connect()",
+	}, {
+		code = "DEPRECATED_SPAWN",
+		pattern = "spawn(",
+		message = "Use task.spawn() instead of spawn()",
+	} }
+	local function addIssue(issue)
+		if #issues >= maxIssues then
+			truncated = true
+			return false
+		end
+		local _issue = issue
+		table.insert(issues, _issue)
+		return true
+	end
+	local function walk(instance)
+		if truncated then
+			return nil
+		end
+		if instance:IsA("LuaSourceContainer") then
+			scriptsChecked += 1
+			local source = readScriptSource(instance)
+			local instancePath = getInstancePath(instance)
+			local compileFn, compileError = loadstring(source)
+			if not compileFn then
+				syntaxErrors += 1
+				if not addIssue({
+					severity = "error",
+					code = "SYNTAX_ERROR",
+					instancePath = instancePath,
+					line = parseLineFromError(tostring(compileError)),
+					message = tostring(compileError),
+				}) then
+					return nil
+				end
+			end
+			if includeWarnings then
+				local lines = splitLines(source)
+				for i = 0, #lines - 1 do
+					if truncated then
+						return nil
+					end
+					local line = string.lower(lines[i + 1])
+					for _, pattern in warningPatterns do
+						local _arg0 = string.lower((pattern.pattern))
+						if (string.find(line, _arg0)) ~= nil then
+							warnings += 1
+							if not addIssue({
+								severity = "warning",
+								code = pattern.code,
+								instancePath = instancePath,
+								line = i + 1,
+								message = pattern.message,
+							}) then
+								return nil
+							end
+						end
+					end
+				end
+			end
+		end
+		for _, child in instance:GetChildren() do
+			walk(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	walk(startInstance)
+	return {
+		success = true,
+		passed = syntaxErrors == 0,
+		truncated = truncated,
+		summary = {
+			scriptsChecked = scriptsChecked,
+			syntaxErrors = syntaxErrors,
+			warnings = warnings,
+			issueCount = #issues,
+		},
+		issues = issues,
+		requestedPath = startPath,
+	}
+end
+local function runPlaytestChecks(requestData)
+	local _condition = (requestData.mode)
+	if _condition == nil then
+		_condition = "play"
+	end
+	local mode = _condition
+	local _condition_1 = (requestData.durationSeconds)
+	if _condition_1 == nil then
+		_condition_1 = 10
+	end
+	local durationSeconds = math.clamp(_condition_1, 1, 120)
+	local _condition_2 = (requestData.settleTimeoutSeconds)
+	if _condition_2 == nil then
+		_condition_2 = 12
+	end
+	local settleTimeoutSeconds = math.clamp(_condition_2, 1, 30)
+	local _condition_3 = (requestData.maxIssues)
+	if _condition_3 == nil then
+		_condition_3 = 300
+	end
+	local maxIssues = math.max(1, _condition_3)
+	if mode ~= "play" and mode ~= "run" then
+		return {
+			error = 'mode must be "play" or "run"',
+		}
+	end
+	if testRunning then
+		return {
+			error = "A test is already running",
+		}
+	end
+	ensureGlobalLogCapture()
+	testRunning = true
+	testResult = nil
+	testError = nil
+	local localOutput = {}
+	local localConnection = LogService.MessageOut:Connect(function(message, messageType)
+		if message == STOP_SIGNAL then
+			return nil
+		end
+		local _arg0 = {
+			message = message,
+			messageType = messageType.Name,
+			timestamp = tick(),
+		}
+		table.insert(localOutput, _arg0)
+	end)
+	cleanupStopListener()
+	local injectOk, injectErr = pcall(function()
+		return injectStopListener()
+	end)
+	if not injectOk then
+		warn(`[MCP] Failed to inject stop listener: {injectErr}`)
+	end
+	local finished = false
+	local runError
+	task.spawn(function()
+		local ok, result = pcall(function()
+			if mode == "play" then
+				return StudioTestService:ExecutePlayModeAsync({})
+			end
+			return StudioTestService:ExecuteRunModeAsync({})
+		end)
+		if ok then
+			testResult = result
+		else
+			runError = tostring(result)
+			testError = runError
+		end
+		finished = true
+	end)
+	local startedAt = tick()
+	while (tick() - startedAt) < durationSeconds and not finished do
+		task.wait(0.25)
+	end
+	local forcedStop = false
+	if not finished then
+		forcedStop = true
+		warn(STOP_SIGNAL)
+	end
+	local settleStart = tick()
+	while not finished and (tick() - settleStart) < settleTimeoutSeconds do
+		task.wait(0.2)
+	end
+	local settleTimedOut = not finished
+	if settleTimedOut and not (runError ~= "" and runError) then
+		runError = "Timed out waiting for playtest to stop"
+		testError = runError
+	end
+	localConnection:Disconnect()
+	cleanupStopListener()
+	testRunning = false
+	local issues = {}
+	local warningCount = 0
+	local errorCount = 0
+	for i = 0, #localOutput - 1 do
+		if #issues >= maxIssues then
+			break
+		end
+		local entry = localOutput[i + 1]
+		local lowerType = string.lower(entry.messageType)
+		local severity
+		if (string.find(lowerType, "error")) ~= nil then
+			severity = "error"
+			errorCount += 1
+		elseif (string.find(lowerType, "warning")) ~= nil then
+			severity = "warning"
+			warningCount += 1
+		end
+		if severity ~= "" and severity then
+			local _arg0 = {
+				severity = severity,
+				messageType = entry.messageType,
+				line = parseLineFromError(entry.message),
+				message = entry.message,
+				timestamp = entry.timestamp,
+			}
+			table.insert(issues, _arg0)
+		end
+	end
+	local _condition_4 = runError
+	if _condition_4 ~= "" and _condition_4 then
+		_condition_4 = #issues < maxIssues
+	end
+	if _condition_4 ~= "" and _condition_4 then
+		errorCount += 1
+		local _arg0 = {
+			severity = "error",
+			code = "PLAYTEST_RUNTIME",
+			message = runError,
+		}
+		table.insert(issues, _arg0)
+	end
+	local pass = errorCount == 0 and not settleTimedOut
+	return {
+		success = true,
+		passed = pass,
+		mode = mode,
+		durationSeconds = durationSeconds,
+		forcedStop = forcedStop,
+		settleTimedOut = settleTimedOut,
+		summary = {
+			totalLogs = #localOutput,
+			warningCount = warningCount,
+			errorCount = errorCount,
+			issueCount = #issues,
+		},
+		issues = issues,
+		testResult = if testResult ~= nil then tostring(testResult) else nil,
+		testError = testError,
+	}
+end
+local function logsSince(requestData)
+	ensureGlobalLogCapture()
+	local _condition = (requestData.cursor)
+	if _condition == nil then
+		_condition = 0
+	end
+	local cursor = math.max(0, _condition)
+	local _condition_1 = (requestData.limit)
+	if _condition_1 == nil then
+		_condition_1 = 200
+	end
+	local limit = math.clamp(_condition_1, 1, 1000)
+	local unseen = {}
+	for _, entry in bufferedLogs do
+		if entry.id > cursor then
+			table.insert(unseen, entry)
+		end
+	end
+	local limited = {}
+	do
+		local i = 0
+		local _shouldIncrement = false
+		while true do
+			if _shouldIncrement then
+				i += 1
+			else
+				_shouldIncrement = true
+			end
+			if not (i < #unseen and i < limit) then
+				break
+			end
+			local _arg0 = unseen[i + 1]
+			table.insert(limited, _arg0)
+		end
+	end
+	local hasMore = #unseen > #limited
+	local nextCursor = if #limited > 0 then limited[#limited].id else cursor
+	local _object = {
+		cursor = nextCursor,
+		previousCursor = cursor,
+		hasMore = hasMore,
+		count = #limited,
+	}
+	local _left = "entries"
+	-- ▼ ReadonlyArray.map ▼
+	local _newValue = table.create(#limited)
+	local _callback = function(entry)
+		return {
+			id = entry.id,
+			message = entry.message,
+			messageType = entry.messageType,
+			timestamp = entry.timestamp,
+		}
+	end
+	for _k, _v in limited do
+		_newValue[_k] = _callback(_v, _k - 1, limited)
+	end
+	-- ▲ ReadonlyArray.map ▲
+	_object[_left] = _newValue
+	return _object
+end
+ensureGlobalLogCapture()
 return {
 	startPlaytest = startPlaytest,
 	stopPlaytest = stopPlaytest,
 	getPlaytestOutput = getPlaytestOutput,
+	runTests = runTests,
+	runPlaytestChecks = runPlaytestChecks,
+	logsSince = logsSince,
 }
 ]]></string>
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">Recording</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -4359,7 +5983,7 @@ return {
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">State</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -4450,7 +6074,7 @@ return {
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">UI</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -5078,7 +6702,7 @@ return {
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">Utils</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -5117,10 +6741,14 @@ local function getInstanceByPath(path)
 	end
 	local current = game
 	for _, part in parts do
+		local _result = current
+		if _result ~= nil then
+			_result = _result:FindFirstChild(part)
+		end
+		current = _result
 		if not current then
 			return nil
 		end
-		current = current:FindFirstChild(part)
 	end
 	return current
 end
@@ -5608,11 +7236,11 @@ return {
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="19">
+    <Item class="Folder" referent="20">
       <Properties>
         <string name="Name">include</string>
       </Properties>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">Promise</string>
           <string name="Source"><![CDATA[--[[
@@ -7686,7 +9314,7 @@ return Promise
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">RuntimeLib</string>
           <string name="Source"><![CDATA[local Promise = require(script.Parent.Promise)
@@ -7953,15 +9581,15 @@ return TS
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="20">
+    <Item class="Folder" referent="21">
       <Properties>
         <string name="Name">node_modules</string>
       </Properties>
-      <Item class="Folder" referent="21">
+      <Item class="Folder" referent="22">
         <Properties>
           <string name="Name">@rbxts</string>
         </Properties>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">services</string>
           <string name="Source"><![CDATA[return setmetatable({}, {

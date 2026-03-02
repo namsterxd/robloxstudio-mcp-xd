@@ -94,6 +94,16 @@ export class RobloxStudioMCPServer {
 
           case 'get_project_structure':
             return await this.tools.getProjectStructure((args as any)?.path, (args as any)?.maxDepth, (args as any)?.scriptsOnly);
+          case 'script_index':
+            return await this.tools.scriptIndex((args as any)?.path, (args as any)?.includeOutline, (args as any)?.includeHash, (args as any)?.maxScripts);
+          case 'find_references':
+            return await this.tools.findReferences((args as any)?.symbol as string, {
+              path: (args as any)?.path,
+              caseSensitive: (args as any)?.caseSensitive,
+              exactWord: (args as any)?.exactWord,
+              maxResults: (args as any)?.maxResults,
+              classFilter: (args as any)?.classFilter,
+            });
 
           case 'set_property':
             return await this.tools.setProperty((args as any)?.instancePath as string, (args as any)?.propertyName as string, (args as any)?.propertyValue);
@@ -146,6 +156,17 @@ export class RobloxStudioMCPServer {
             return await this.tools.insertScriptLines((args as any)?.instancePath as string, (args as any)?.afterLine as number, (args as any)?.newContent as string);
           case 'delete_script_lines':
             return await this.tools.deleteScriptLines((args as any)?.instancePath as string, (args as any)?.startLine as number, (args as any)?.endLine as number);
+          case 'apply_patch_batch':
+            return await this.tools.applyPatchBatch((args as any)?.edits, (args as any)?.dryRun);
+          case 'rename_symbol':
+            return await this.tools.renameSymbol((args as any)?.oldName as string, (args as any)?.newName as string, {
+              path: (args as any)?.path,
+              classFilter: (args as any)?.classFilter,
+              caseSensitive: (args as any)?.caseSensitive,
+              exactWord: (args as any)?.exactWord,
+              dryRun: (args as any)?.dryRun,
+              maxResults: (args as any)?.maxResults,
+            });
 
           case 'get_attribute':
             return await this.tools.getAttribute((args as any)?.instancePath as string, (args as any)?.attributeName as string);
@@ -177,6 +198,23 @@ export class RobloxStudioMCPServer {
             return await this.tools.stopPlaytest();
           case 'get_playtest_output':
             return await this.tools.getPlaytestOutput();
+          case 'run_tests':
+            return await this.tools.runTests((args as any)?.path, (args as any)?.includeWarnings, (args as any)?.maxIssues);
+          case 'run_playtest_checks':
+            return await this.tools.runPlaytestChecks((args as any)?.mode, (args as any)?.durationSeconds, (args as any)?.settleTimeoutSeconds, (args as any)?.maxIssues);
+          case 'logs_since':
+            return await this.tools.logsSince((args as any)?.cursor, (args as any)?.limit);
+          case 'snapshot_scene':
+            return await this.tools.snapshotScene(
+              (args as any)?.path,
+              (args as any)?.maxDepth,
+              (args as any)?.maxNodes,
+              (args as any)?.includeProperties,
+              (args as any)?.includeData,
+              (args as any)?.snapshotId,
+            );
+          case 'diff_scene':
+            return await this.tools.diffScene((args as any)?.fromSnapshotId as string, (args as any)?.toSnapshotId as string, (args as any)?.maxChanges);
 
           case 'export_build':
             return await this.tools.exportBuild((args as any)?.instancePath as string, (args as any)?.outputId, (args as any)?.style);

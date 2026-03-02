@@ -1,6 +1,6 @@
 import Utils from "../Utils";
 
-const { getInstancePath, getInstanceByPath, readScriptSource } = Utils;
+const { getInstancePath, getInstanceByPath, readScriptSource, splitLines } = Utils;
 
 interface TreeNode {
 	name: string;
@@ -672,6 +672,223 @@ function grepScripts(requestData: Record<string, unknown>) {
 	};
 }
 
+function hashString(input: string): string {
+	let hash = 5381;
+	for (let i = 1; i <= input.size(); i++) {
+		const [code] = string.byte(input, i) as LuaTuple<[number?]>;
+		hash = (hash * 33 + (code ?? 0)) % 2147483647;
+	}
+	return tostring(hash);
+}
+
+function extractFunctionOutline(source: string, maxFunctions: number = 200): Record<string, unknown>[] {
+	const [lines] = splitLines(source);
+	const outline: Record<string, unknown>[] = [];
+
+	for (let i = 0; i < lines.size(); i++) {
+		if (outline.size() >= maxFunctions) break;
+
+		const line = lines[i];
+		const trimmed = line.gsub("^%s+", "")[0];
+
+		const localFn = trimmed.match("^local%s+function%s+([%w_%.:]+)%s*%(") as LuaTuple<[string?]>;
+		if (localFn[0]) {
+			outline.push({
+				name: localFn[0],
+				line: i + 1,
+				kind: "local_function",
+			});
+			continue;
+		}
+
+		const globalFn = trimmed.match("^function%s+([%w_%.:]+)%s*%(") as LuaTuple<[string?]>;
+		if (globalFn[0]) {
+			outline.push({
+				name: globalFn[0],
+				line: i + 1,
+				kind: "function",
+			});
+			continue;
+		}
+
+		const assignedFn = trimmed.match("^([%w_%.:]+)%s*=%s*function%s*%(") as LuaTuple<[string?]>;
+		if (assignedFn[0]) {
+			outline.push({
+				name: assignedFn[0],
+				line: i + 1,
+				kind: "assigned_function",
+			});
+		}
+	}
+
+	return outline;
+}
+
+function scriptIndex(requestData: Record<string, unknown>) {
+	const startPath = (requestData.path as string) ?? "";
+	const includeOutline = (requestData.includeOutline as boolean) ?? false;
+	const includeHash = (requestData.includeHash as boolean) ?? true;
+	const maxScripts = math.max(1, (requestData.maxScripts as number) ?? 400);
+
+	const startInstance = startPath !== "" ? getInstanceByPath(startPath) : game;
+	if (!startInstance) return { error: `Path not found: ${startPath}` };
+
+	const scripts: Record<string, unknown>[] = [];
+	let visitedInstances = 0;
+	let truncated = false;
+
+	function walk(instance: Instance) {
+		if (truncated) return;
+		visitedInstances++;
+
+		if (instance.IsA("LuaSourceContainer")) {
+			if (scripts.size() >= maxScripts) {
+				truncated = true;
+				return;
+			}
+
+			const source = readScriptSource(instance);
+			const [lines] = splitLines(source);
+			const entry: Record<string, unknown> = {
+				name: instance.Name,
+				className: instance.ClassName,
+				path: getInstancePath(instance),
+				lineCount: lines.size(),
+				sourceLength: source.size(),
+			};
+
+			if (includeHash) {
+				entry.hash = hashString(source);
+			}
+
+			if (includeOutline) {
+				entry.outline = extractFunctionOutline(source);
+			}
+
+			scripts.push(entry);
+		}
+
+		for (const child of instance.GetChildren()) {
+			walk(child);
+			if (truncated) return;
+		}
+	}
+
+	walk(startInstance);
+
+	return {
+		scripts,
+		count: scripts.size(),
+		truncated,
+		requestedPath: startPath,
+		visitedInstances,
+		options: { includeOutline, includeHash, maxScripts },
+	};
+}
+
+function isWordChar(ch: string | undefined): boolean {
+	if (ch === undefined || ch === "") return false;
+	if (ch === "_") return true;
+	const [start] = string.find(ch, "[A-Za-z0-9]", 1);
+	return start !== undefined;
+}
+
+function findReferences(requestData: Record<string, unknown>) {
+	const symbol = requestData.symbol as string;
+	if (!symbol || symbol === "") return { error: "symbol is required" };
+
+	const startPath = (requestData.path as string) ?? "";
+	const caseSensitive = (requestData.caseSensitive as boolean) ?? true;
+	const exactWord = (requestData.exactWord as boolean) ?? true;
+	const maxResults = math.max(1, (requestData.maxResults as number) ?? 300);
+	const classFilter = requestData.classFilter as string | undefined;
+
+	const startInstance = startPath !== "" ? getInstanceByPath(startPath) : game;
+	if (!startInstance) return { error: `Path not found: ${startPath}` };
+
+	const matches: Record<string, unknown>[] = [];
+	let scriptsSearched = 0;
+	let scriptsMatched = 0;
+	let truncated = false;
+
+	const searchNeedle = caseSensitive ? symbol : symbol.lower();
+
+	function walk(instance: Instance) {
+		if (truncated) return;
+
+		if (instance.IsA("LuaSourceContainer")) {
+			if (classFilter && !instance.ClassName.lower().find(classFilter.lower())[0]) {
+				return;
+			}
+
+			scriptsSearched++;
+			const source = readScriptSource(instance);
+			const [lines] = splitLines(source);
+			let localMatches = 0;
+
+			for (let i = 0; i < lines.size(); i++) {
+				if (truncated) break;
+
+				const line = lines[i];
+				const haystack = caseSensitive ? line : line.lower();
+				let searchFrom = 1;
+
+				while (true) {
+					const [startCol, endCol] = string.find(haystack, searchNeedle, searchFrom, true);
+					if (startCol === undefined || endCol === undefined) break;
+
+					let valid = true;
+					if (exactWord) {
+						const before = startCol > 1 ? line.sub(startCol - 1, startCol - 1) : undefined;
+						const after = endCol < line.size() ? line.sub(endCol + 1, endCol + 1) : undefined;
+						valid = !isWordChar(before) && !isWordChar(after);
+					}
+
+					if (valid) {
+						matches.push({
+							instancePath: getInstancePath(instance),
+							scriptName: instance.Name,
+							className: instance.ClassName,
+							line: i + 1,
+							column: startCol,
+							text: line,
+						});
+						localMatches++;
+
+						if (matches.size() >= maxResults) {
+							truncated = true;
+							break;
+						}
+					}
+
+					searchFrom = endCol + 1;
+				}
+			}
+
+			if (localMatches > 0) {
+				scriptsMatched++;
+			}
+		}
+
+		for (const child of instance.GetChildren()) {
+			walk(child);
+			if (truncated) return;
+		}
+	}
+
+	walk(startInstance);
+
+	return {
+		symbol,
+		matches,
+		matchCount: matches.size(),
+		scriptsSearched,
+		scriptsMatched,
+		truncated,
+		options: { caseSensitive, exactWord, maxResults, classFilter, path: startPath },
+	};
+}
+
 export = {
 	getFileTree,
 	searchFiles,
@@ -684,4 +901,6 @@ export = {
 	getClassInfo,
 	getProjectStructure,
 	grepScripts,
+	scriptIndex,
+	findReferences,
 };

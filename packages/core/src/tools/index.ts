@@ -493,6 +493,112 @@ export class RobloxStudioTools {
     };
   }
 
+  async scriptIndex(path: string = '', includeOutline: boolean = false, includeHash: boolean = true, maxScripts: number = 400) {
+    const response = await this.client.request('/api/script-index', {
+      path,
+      includeOutline,
+      includeHash,
+      maxScripts,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async findReferences(
+    symbol: string,
+    options?: {
+      path?: string;
+      caseSensitive?: boolean;
+      exactWord?: boolean;
+      maxResults?: number;
+      classFilter?: string;
+    }
+  ) {
+    if (!symbol) {
+      throw new Error('Symbol is required for find_references');
+    }
+
+    const response = await this.client.request('/api/find-references', {
+      symbol,
+      ...(options || {}),
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async applyPatchBatch(
+    edits: Array<{
+      instancePath: string;
+      operation?: 'replace' | 'insert' | 'delete' | 'set';
+      startLine?: number;
+      endLine?: number;
+      afterLine?: number;
+      newContent?: string;
+      source?: string;
+    }>,
+    dryRun?: boolean,
+  ) {
+    if (!edits || edits.length === 0) {
+      throw new Error('edits array is required for apply_patch_batch');
+    }
+
+    const response = await this.client.request('/api/apply-patch-batch', {
+      edits,
+      dryRun,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async renameSymbol(
+    oldName: string,
+    newName: string,
+    options?: {
+      path?: string;
+      classFilter?: string;
+      caseSensitive?: boolean;
+      exactWord?: boolean;
+      dryRun?: boolean;
+      maxResults?: number;
+    }
+  ) {
+    if (!oldName || !newName) {
+      throw new Error('oldName and newName are required for rename_symbol');
+    }
+
+    const response = await this.client.request('/api/rename-symbol', {
+      oldName,
+      newName,
+      ...(options || {}),
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
   async getAttribute(instancePath: string, attributeName: string) {
     if (!instancePath || !attributeName) {
       throw new Error('Instance path and attribute name are required for get_attribute');
@@ -680,6 +786,93 @@ export class RobloxStudioTools {
     };
   }
 
+  async runTests(path?: string, includeWarnings?: boolean, maxIssues?: number) {
+    const response = await this.client.request('/api/run-tests', {
+      path,
+      includeWarnings,
+      maxIssues,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async runPlaytestChecks(mode?: string, durationSeconds?: number, settleTimeoutSeconds?: number, maxIssues?: number) {
+    const response = await this.client.request('/api/run-playtest-checks', {
+      mode,
+      durationSeconds,
+      settleTimeoutSeconds,
+      maxIssues,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async logsSince(cursor?: number, limit?: number) {
+    const response = await this.client.request('/api/logs-since', {
+      cursor,
+      limit,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async snapshotScene(path?: string, maxDepth?: number, maxNodes?: number, includeProperties?: boolean, includeData?: boolean, snapshotId?: string) {
+    const response = await this.client.request('/api/snapshot-scene', {
+      path,
+      maxDepth,
+      maxNodes,
+      includeProperties,
+      includeData,
+      snapshotId,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async diffScene(fromSnapshotId: string, toSnapshotId: string, maxChanges?: number) {
+    if (!fromSnapshotId || !toSnapshotId) {
+      throw new Error('fromSnapshotId and toSnapshotId are required for diff_scene');
+    }
+
+    const response = await this.client.request('/api/diff-scene', {
+      fromSnapshotId,
+      toSnapshotId,
+      maxChanges,
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
   async undo() {
     const response = await this.client.request('/api/undo', {});
     return {
@@ -706,15 +899,16 @@ export class RobloxStudioTools {
 
 
   private static findLibraryPath(): string {
-    // Walk up from the script location to find the repo root (has .gitignore + package.json)
-    let dir = path.dirname(decodeURIComponent(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1'));
-    for (let i = 0; i < 6; i++) {
+    let dir = process.cwd();
+    for (let i = 0; i < 8; i++) {
       const candidate = path.join(dir, 'build-library');
       if (fs.existsSync(candidate)) return candidate;
-      dir = path.dirname(dir);
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
     }
-    // Fallback: create next to wherever we are
-    const fallback = path.join(dir, 'build-library');
+
+    const fallback = path.join(process.cwd(), 'build-library');
     fs.mkdirSync(fallback, { recursive: true });
     return fallback;
   }

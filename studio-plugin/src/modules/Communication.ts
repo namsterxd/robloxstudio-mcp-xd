@@ -10,6 +10,7 @@ import MetadataHandlers from "./handlers/MetadataHandlers";
 import TestHandlers from "./handlers/TestHandlers";
 import BuildHandlers from "./handlers/BuildHandlers";
 import AssetHandlers from "./handlers/AssetHandlers";
+import SceneHandlers from "./handlers/SceneHandlers";
 import { Connection, RequestPayload, PollResponse } from "../types";
 
 type Handler = (data: Record<string, unknown>) => unknown;
@@ -27,6 +28,8 @@ const routeMap: Record<string, Handler> = {
 	"/api/class-info": QueryHandlers.getClassInfo,
 	"/api/project-structure": QueryHandlers.getProjectStructure,
 	"/api/grep-scripts": QueryHandlers.grepScripts,
+	"/api/script-index": QueryHandlers.scriptIndex,
+	"/api/find-references": QueryHandlers.findReferences,
 
 	"/api/set-property": PropertyHandlers.setProperty,
 	"/api/mass-set-property": PropertyHandlers.massSetProperty,
@@ -46,6 +49,8 @@ const routeMap: Record<string, Handler> = {
 	"/api/edit-script-lines": ScriptHandlers.editScriptLines,
 	"/api/insert-script-lines": ScriptHandlers.insertScriptLines,
 	"/api/delete-script-lines": ScriptHandlers.deleteScriptLines,
+	"/api/apply-patch-batch": ScriptHandlers.applyPatchBatch,
+	"/api/rename-symbol": ScriptHandlers.renameSymbol,
 
 	"/api/get-attribute": MetadataHandlers.getAttribute,
 	"/api/set-attribute": MetadataHandlers.setAttribute,
@@ -63,6 +68,12 @@ const routeMap: Record<string, Handler> = {
 	"/api/start-playtest": TestHandlers.startPlaytest,
 	"/api/stop-playtest": TestHandlers.stopPlaytest,
 	"/api/get-playtest-output": TestHandlers.getPlaytestOutput,
+	"/api/run-tests": TestHandlers.runTests,
+	"/api/run-playtest-checks": TestHandlers.runPlaytestChecks,
+	"/api/logs-since": TestHandlers.logsSince,
+
+	"/api/snapshot-scene": SceneHandlers.snapshotScene,
+	"/api/diff-scene": SceneHandlers.diffScene,
 
 	"/api/export-build": BuildHandlers.exportBuild,
 	"/api/import-build": BuildHandlers.importBuild,

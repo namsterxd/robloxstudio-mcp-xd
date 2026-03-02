@@ -78,7 +78,7 @@ describe('HTTP Server', () => {
       expect(app.isPluginConnected()).toBe(true);
 
       const originalDateNow = Date.now;
-      Date.now = jest.fn(() => originalDateNow() + 11000);
+      Date.now = jest.fn(() => originalDateNow() + 31000);
 
       expect(app.isPluginConnected()).toBe(false);
 
@@ -189,6 +189,56 @@ describe('HTTP Server', () => {
     });
   });
 
+  describe('AI Dev Tool Routes', () => {
+    test('should route /mcp/script_index to tools.scriptIndex', async () => {
+      const mockResult = { content: [{ type: 'text', text: '{"ok":true}' }] } as any;
+      const spy = jest.spyOn(tools, 'scriptIndex').mockResolvedValue(mockResult);
+
+      const response = await request(app)
+        .post('/mcp/script_index')
+        .send({ path: 'game.Workspace', maxScripts: 10 })
+        .expect(200);
+
+      expect(spy).toHaveBeenCalledWith('game.Workspace', undefined, undefined, 10);
+      expect(response.body).toEqual(mockResult);
+    });
+
+    test('should route /mcp/apply_patch_batch to tools.applyPatchBatch', async () => {
+      const mockResult = { content: [{ type: 'text', text: '{"success":true}' }] } as any;
+      const spy = jest.spyOn(tools, 'applyPatchBatch').mockResolvedValue(mockResult);
+      const edits = [
+        {
+          instancePath: 'game.ServerScriptService.Main',
+          operation: 'replace',
+          startLine: 1,
+          endLine: 1,
+          newContent: 'print("hello")',
+        },
+      ];
+
+      const response = await request(app)
+        .post('/mcp/apply_patch_batch')
+        .send({ edits, dryRun: true })
+        .expect(200);
+
+      expect(spy).toHaveBeenCalledWith(edits, true);
+      expect(response.body).toEqual(mockResult);
+    });
+
+    test('should route /mcp/diff_scene to tools.diffScene', async () => {
+      const mockResult = { content: [{ type: 'text', text: '{"changes":1}' }] } as any;
+      const spy = jest.spyOn(tools, 'diffScene').mockResolvedValue(mockResult);
+
+      const response = await request(app)
+        .post('/mcp/diff_scene')
+        .send({ fromSnapshotId: 'a', toSnapshotId: 'b', maxChanges: 25 })
+        .expect(200);
+
+      expect(spy).toHaveBeenCalledWith('a', 'b', 25);
+      expect(response.body).toEqual(mockResult);
+    });
+  });
+
   describe('MCP Server State Management', () => {
     test('should track MCP server activity', async () => {
       app.setMCPServerActive(true);
@@ -204,7 +254,7 @@ describe('HTTP Server', () => {
       expect(app.isMCPServerActive()).toBe(true);
 
       const originalDateNow = Date.now;
-      Date.now = jest.fn(() => originalDateNow() + 16000);
+      Date.now = jest.fn(() => originalDateNow() + 31000);
 
       expect(app.isMCPServerActive()).toBe(false);
 

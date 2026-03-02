@@ -885,6 +885,321 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     }
   },
 
+  // === AI Script Indexing & Refactors ===
+  {
+    name: 'script_index',
+    category: 'read',
+    description: 'Index scripts under a path with metadata (path, class, line count, hash) and optional function outline for fast navigation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Root path to index (default: game)'
+        },
+        includeOutline: {
+          type: 'boolean',
+          description: 'Include detected function outline per script',
+          default: false
+        },
+        includeHash: {
+          type: 'boolean',
+          description: 'Include a lightweight source hash per script',
+          default: true
+        },
+        maxScripts: {
+          type: 'number',
+          description: 'Maximum scripts to index before truncating results',
+          default: 400
+        }
+      }
+    }
+  },
+  {
+    name: 'find_references',
+    category: 'read',
+    description: 'Find symbol references across scripts with line/column and matching text snippet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: {
+          type: 'string',
+          description: 'Symbol name to search for'
+        },
+        path: {
+          type: 'string',
+          description: 'Optional subtree to search'
+        },
+        classFilter: {
+          type: 'string',
+          enum: ['Script', 'LocalScript', 'ModuleScript'],
+          description: 'Only search scripts of this class type'
+        },
+        caseSensitive: {
+          type: 'boolean',
+          description: 'Case-sensitive symbol matching',
+          default: true
+        },
+        exactWord: {
+          type: 'boolean',
+          description: 'Match only whole symbol tokens',
+          default: true
+        },
+        maxResults: {
+          type: 'number',
+          description: 'Maximum matches to return',
+          default: 300
+        }
+      },
+      required: ['symbol']
+    }
+  },
+  {
+    name: 'apply_patch_batch',
+    category: 'write',
+    description: 'Apply multiple script edits atomically across one or more scripts. Supports dry-run preview and rollback on failure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edits: {
+          type: 'array',
+          description: 'List of patch edits to apply in order',
+          items: {
+            type: 'object',
+            properties: {
+              instancePath: {
+                type: 'string',
+                description: 'Target script path'
+              },
+              operation: {
+                type: 'string',
+                enum: ['replace', 'insert', 'delete', 'set'],
+                description: 'Patch operation (default: replace)'
+              },
+              startLine: {
+                type: 'number',
+                description: 'Start line for replace/delete'
+              },
+              endLine: {
+                type: 'number',
+                description: 'End line for replace/delete'
+              },
+              afterLine: {
+                type: 'number',
+                description: 'Line number for insert (insert after this line)'
+              },
+              newContent: {
+                type: 'string',
+                description: 'Replacement or inserted content'
+              },
+              source: {
+                type: 'string',
+                description: 'Full source used by set operation'
+              }
+            },
+            required: ['instancePath']
+          }
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Validate and preview without applying changes',
+          default: false
+        }
+      },
+      required: ['edits']
+    }
+  },
+  {
+    name: 'rename_symbol',
+    category: 'write',
+    description: 'Rename a symbol across scripts with optional dry-run preview. Uses token-aware matching and transactional apply.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        oldName: {
+          type: 'string',
+          description: 'Current symbol name'
+        },
+        newName: {
+          type: 'string',
+          description: 'New symbol name'
+        },
+        path: {
+          type: 'string',
+          description: 'Optional subtree to limit rename scope'
+        },
+        classFilter: {
+          type: 'string',
+          enum: ['Script', 'LocalScript', 'ModuleScript'],
+          description: 'Only rename in scripts of this class type'
+        },
+        caseSensitive: {
+          type: 'boolean',
+          description: 'Case-sensitive symbol matching',
+          default: true
+        },
+        exactWord: {
+          type: 'boolean',
+          description: 'Rename only whole symbol tokens',
+          default: true
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Preview rename changes without applying',
+          default: true
+        },
+        maxResults: {
+          type: 'number',
+          description: 'Maximum symbol replacements allowed in one operation',
+          default: 2000
+        }
+      },
+      required: ['oldName', 'newName']
+    }
+  },
+
+  // === Automated Testing & Logs ===
+  {
+    name: 'run_tests',
+    category: 'read',
+    description: 'Run static script checks and return structured issues (syntax errors and optional warnings).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Optional subtree to test'
+        },
+        includeWarnings: {
+          type: 'boolean',
+          description: 'Include warning-level checks',
+          default: true
+        },
+        maxIssues: {
+          type: 'number',
+          description: 'Maximum number of issues to return',
+          default: 200
+        }
+      }
+    }
+  },
+  {
+    name: 'run_playtest_checks',
+    category: 'read',
+    description: 'Start playtest checks for a bounded duration and return structured warning/error diagnostics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          enum: ['play', 'run'],
+          description: 'Playtest mode',
+          default: 'play'
+        },
+        durationSeconds: {
+          type: 'number',
+          description: 'How long to let playtest run before stop signal',
+          default: 10
+        },
+        settleTimeoutSeconds: {
+          type: 'number',
+          description: 'How long to wait for graceful stop after signal',
+          default: 12
+        },
+        maxIssues: {
+          type: 'number',
+          description: 'Maximum diagnostic issues to return',
+          default: 300
+        }
+      }
+    }
+  },
+  {
+    name: 'logs_since',
+    category: 'read',
+    description: 'Fetch incremental Studio logs using a cursor for token-efficient polling.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cursor: {
+          type: 'number',
+          description: 'Last seen log cursor (use 0 for first fetch)',
+          default: 0
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum log entries to return',
+          default: 200
+        }
+      }
+    }
+  },
+
+  // === Scene Snapshots & Diff ===
+  {
+    name: 'snapshot_scene',
+    category: 'read',
+    description: 'Capture a scene snapshot (hierarchy + tracked properties) and store it for later diff.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Root path to snapshot (default: game.Workspace)',
+          default: 'game.Workspace'
+        },
+        maxDepth: {
+          type: 'number',
+          description: 'Traversal depth for snapshot capture',
+          default: 4
+        },
+        maxNodes: {
+          type: 'number',
+          description: 'Maximum nodes captured before truncation',
+          default: 3000
+        },
+        includeProperties: {
+          type: 'boolean',
+          description: 'Include tracked property values in snapshot',
+          default: true
+        },
+        includeData: {
+          type: 'boolean',
+          description: 'Include full snapshot data in response (can be large)',
+          default: false
+        },
+        snapshotId: {
+          type: 'string',
+          description: 'Optional custom snapshot id'
+        }
+      }
+    }
+  },
+  {
+    name: 'diff_scene',
+    category: 'read',
+    description: 'Diff two stored scene snapshots and report added, removed, and changed instances/properties.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromSnapshotId: {
+          type: 'string',
+          description: 'Baseline snapshot id'
+        },
+        toSnapshotId: {
+          type: 'string',
+          description: 'Target snapshot id'
+        },
+        maxChanges: {
+          type: 'number',
+          description: 'Maximum detailed change items to include',
+          default: 500
+        }
+      },
+      required: ['fromSnapshotId', 'toSnapshotId']
+    }
+  },
+
   // === Playtest ===
   {
     name: 'start_playtest',
