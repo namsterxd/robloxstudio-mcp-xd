@@ -1011,11 +1011,22 @@ export class RobloxStudioTools {
       if (!Array.isArray(value) || value.length < 2 || value.length > 3) {
         throw new Error(`Palette key "${rawKey}" must map to [BrickColor, Material] or [BrickColor, Material, MaterialVariant]`);
       }
-      if (!value.every(entry => typeof entry === 'string' && entry.trim() !== '')) {
-        throw new Error(`Palette key "${rawKey}" must contain only non-empty string values`);
+
+      const normalizedTuple: string[] = [];
+      for (let index = 0; index < value.length; index++) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) {
+          throw new Error(`Palette key "${rawKey}" must contain only non-empty string values`);
+        }
+
+        const entry = value[index];
+        if (typeof entry !== 'string' || entry.trim() === '') {
+          throw new Error(`Palette key "${rawKey}" must contain only non-empty string values`);
+        }
+
+        normalizedTuple.push(entry.trim());
       }
 
-      normalized[key] = value.map(entry => entry.trim()) as [string, string] | [string, string, string];
+      normalized[key] = normalizedTuple as [string, string] | [string, string, string];
     }
 
     if (Object.keys(normalized).length === 0) {
