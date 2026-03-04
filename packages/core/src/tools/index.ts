@@ -952,7 +952,7 @@ export class RobloxStudioTools {
   async createBuild(
     id: string,
     style: string,
-    palette: Record<string, [string, string]>,
+    palette: Record<string, [string, string] | [string, string, string]>,
     parts: unknown,
     bounds?: [number, number, number]
   ) {
@@ -960,12 +960,13 @@ export class RobloxStudioTools {
       throw new Error('id, palette, and parts are required for create_build');
     }
 
-    const normalizedParts = this.normalizeBuildParts(parts);
+    const normalizedPalette = this.normalizePalette(palette);
+    const normalizedParts = this.normalizeBuildParts(parts, new Set(Object.keys(normalizedPalette)));
 
     // Auto-compute bounds if not provided
     const computedBounds = bounds || this.computeBounds(normalizedParts);
 
-    const buildData = { id, style, bounds: computedBounds, palette, parts: normalizedParts };
+    const buildData = { id, style, bounds: computedBounds, palette: normalizedPalette, parts: normalizedParts };
 
     const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${id}.json`);
     const dirPath = path.dirname(filePath);
@@ -985,7 +986,7 @@ export class RobloxStudioTools {
             style,
             bounds: computedBounds,
             partCount: normalizedParts.length,
-            paletteKeys: Object.keys(palette),
+            paletteKeys: Object.keys(normalizedPalette),
             savedTo: filePath
           })
         }
@@ -993,7 +994,35 @@ export class RobloxStudioTools {
     };
   }
 
-  private normalizeBuildParts(parts: unknown): any[][] {
+  private normalizePalette(palette: Record<string, [string, string] | [string, string, string]>): Record<string, [string, string] | [string, string, string]> {
+    if (!palette || typeof palette !== 'object' || Array.isArray(palette)) {
+      throw new Error('palette must be an object mapping keys to [BrickColor, Material] tuples');
+    }
+
+    const normalized: Record<string, [string, string] | [string, string, string]> = {};
+    for (const [rawKey, value] of Object.entries(palette)) {
+      const key = rawKey.trim();
+      if (!key) {
+        throw new Error('palette keys must be non-empty strings');
+      }
+      if (normalized[key]) {
+        throw new Error(`palette contains duplicate key after trimming: "${key}"`);
+      }
+      if (!Array.isArray(value) || value.length < 2 || value.length > 3) {
+        throw new Error(`Palette key "${rawKey}" must map to [BrickColor, Material] or [BrickColor, Material, MaterialVariant]`);
+      }
+
+      normalized[key] = value as [string, string] | [string, string, string];
+    }
+
+    if (Object.keys(normalized).length === 0) {
+      throw new Error('palette must contain at least one key');
+    }
+
+    return normalized;
+  }
+
+  private normalizeBuildParts(parts: unknown, paletteKeys?: Set<string>): any[][] {
     if (!Array.isArray(parts) || parts.length === 0) {
       throw new Error('parts must be a non-empty array');
     }
@@ -1047,15 +1076,22 @@ export class RobloxStudioTools {
         if (!numericCore.every(value => typeof value === 'number' && Number.isFinite(value))) {
           throw new Error(`Part ${i} must use finite numbers for position, size, and rotation`);
         }
+        if ([sx, sy, sz].some(value => value <= 0)) {
+          throw new Error(`Part ${i} size values must be greater than 0`);
+        }
         if (typeof paletteKey !== 'string' || paletteKey.trim() === '') {
           throw new Error(`Part ${i} field "paletteKey" must be a non-empty string`);
+        }
+        const normalizedPaletteKey = paletteKey.trim();
+        if (paletteKeys && !paletteKeys.has(normalizedPaletteKey)) {
+          throw new Error(`Part ${i} references unknown palette key "${normalizedPaletteKey}"`);
         }
 
         const tuple: any[] = [
           px, py, pz,
           sx, sy, sz,
           rx, ry, rz,
-          paletteKey
+          normalizedPaletteKey
         ];
 
         const rawShape = part[10];
@@ -1087,18 +1123,25 @@ export class RobloxStudioTools {
       const record = part as Record<string, unknown>;
       const position = normalizeVec3(record.position, 'position', i);
       const size = normalizeVec3(record.size, 'size', i);
+      if (size.some(value => value <= 0)) {
+        throw new Error(`Part ${i} field "size" values must be greater than 0`);
+      }
       const rotation = normalizeVec3(record.rotation, 'rotation', i);
       const paletteKey = record.paletteKey;
 
       if (typeof paletteKey !== 'string' || paletteKey.trim() === '') {
         throw new Error(`Part ${i} field "paletteKey" must be a non-empty string`);
       }
+      const normalizedPaletteKey = paletteKey.trim();
+      if (paletteKeys && !paletteKeys.has(normalizedPaletteKey)) {
+        throw new Error(`Part ${i} references unknown palette key "${normalizedPaletteKey}"`);
+      }
 
       const tuple: any[] = [
         position[0], position[1], position[2],
         size[0], size[1], size[2],
         rotation[0], rotation[1], rotation[2],
-        paletteKey
+        normalizedPaletteKey
       ];
 
       const shape = record.shape;
