@@ -1,11 +1,11 @@
 {
-  "name": "robloxstudio-mcp",
+  "name": "robloxstudio-mcp-xd",
   "version": "2.5.1",
   "description": "MCP Server for Roblox Studio Integration - Access Studio data, scripts, and objects through AI tools",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "robloxstudio-mcp": "dist/index.js"
+    "robloxstudio-mcp-xd": "dist/index.js"
   },
   "files": [
     "dist/**/*",
@@ -28,11 +28,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/boshyxd/robloxstudio-mcp.git"
+    "url": "https://github.com/namsterxd/robloxstudio-mcp-xd.git"
   },
-  "homepage": "https://github.com/boshyxd/robloxstudio-mcp#readme",
+  "homepage": "https://github.com/namsterxd/robloxstudio-mcp-xd#readme",
   "bugs": {
-    "url": "https://github.com/boshyxd/robloxstudio-mcp/issues"
+    "url": "https://github.com/namsterxd/robloxstudio-mcp-xd/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",

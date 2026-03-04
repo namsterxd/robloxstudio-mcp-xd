@@ -438,7 +438,7 @@ local function checkForUpdates()
 	task.spawn(function()
 		local success, result = pcall(function()
 			return HttpService:RequestAsync({
-				Url = "https://registry.npmjs.org/robloxstudio-mcp/latest",
+				Url = "https://registry.npmjs.org/robloxstudio-mcp-xd/latest",
 				Method = "GET",
 				Headers = {
 					Accept = "application/json",
@@ -461,7 +461,7 @@ local function checkForUpdates()
 				local latestVersion = data.version
 				if Utils.compareVersions(State.CURRENT_VERSION, latestVersion) < 0 then
 					local ui = UI.getElements()
-					ui.updateBannerText.Text = `v{latestVersion} available - github.com/boshyxd/robloxstudio-mcp`
+					ui.updateBannerText.Text = `v{latestVersion} available - github.com/namsterxd/robloxstudio-mcp-xd`
 					ui.updateBanner.Visible = true
 					ui.contentFrame.Position = UDim2.new(0, 8, 0, 92)
 					ui.contentFrame.Size = UDim2.new(1, -16, 1, -100)
@@ -520,81 +520,82 @@ local function insertAsset(requestData)
 		}
 	end
 	local recordingId = beginRecording(`Insert asset {assetId}`)
-	local loadSuccess, wrapperModel = pcall(function()
-		return AssetService:LoadAssetAsync(assetId)
-	end)
-	if not loadSuccess or not wrapperModel then
-		finishRecording(recordingId, false)
-		return {
-			error = `Failed to load asset {assetId}: {tostring(wrapperModel)}`,
-		}
-	end
-	local insertedInstances = {}
-	local children = wrapperModel:GetChildren()
-	for _, child in children do
-		child.Parent = parentInstance
-		table.insert(insertedInstances, child)
-	end
-	-- Apply position if provided
-	if position then
-		local _condition_1 = position.x
-		if _condition_1 == nil then
-			_condition_1 = 0
+	local wrapperModel
+	local insertSuccess, insertResult = pcall(function()
+		local loadedWrapper = AssetService:LoadAssetAsync(assetId)
+		wrapperModel = loadedWrapper
+		local insertedInstances = {}
+		local children = loadedWrapper:GetChildren()
+		for _, child in children do
+			child.Parent = parentInstance
+			table.insert(insertedInstances, child)
 		end
-		local _condition_2 = position.y
-		if _condition_2 == nil then
-			_condition_2 = 0
-		end
-		local _condition_3 = position.z
-		if _condition_3 == nil then
-			_condition_3 = 0
-		end
-		local pos = Vector3.new(_condition_1, _condition_2, _condition_3)
-		for _, inst in insertedInstances do
-			if inst:IsA("BasePart") then
-				inst.Position = pos
-			elseif inst:IsA("Model") then
-				if inst.PrimaryPart then
-					inst:PivotTo(CFrame.new(pos))
-				else
-					-- Find first BasePart descendant to pivot around
-					local firstPart = inst:FindFirstChildWhichIsA("BasePart", true)
-					if firstPart then
+		if position then
+			local _condition_1 = position.x
+			if _condition_1 == nil then
+				_condition_1 = 0
+			end
+			local _condition_2 = position.y
+			if _condition_2 == nil then
+				_condition_2 = 0
+			end
+			local _condition_3 = position.z
+			if _condition_3 == nil then
+				_condition_3 = 0
+			end
+			local pos = Vector3.new(_condition_1, _condition_2, _condition_3)
+			for _, inst in insertedInstances do
+				if inst:IsA("BasePart") then
+					inst.Position = pos
+				elseif inst:IsA("Model") then
+					if inst.PrimaryPart then
 						inst:PivotTo(CFrame.new(pos))
+					else
+						local firstPart = inst:FindFirstChildWhichIsA("BasePart", true)
+						if firstPart then
+							inst:PivotTo(CFrame.new(pos))
+						end
 					end
 				end
 			end
 		end
-	end
-	-- Destroy the wrapper model
-	wrapperModel:Destroy()
-	-- Set undo waypoint
-	finishRecording(recordingId, true)
-	-- Select inserted instances
-	pcall(function()
-		Selection:Set(insertedInstances)
-	end)
-	-- ▼ ReadonlyArray.map ▼
-	local _newValue = table.create(#insertedInstances)
-	local _callback = function(inst)
+		pcall(function()
+			Selection:Set(insertedInstances)
+		end)
+		-- ▼ ReadonlyArray.map ▼
+		local _newValue = table.create(#insertedInstances)
+		local _callback = function(inst)
+			return {
+				name = inst.Name,
+				className = inst.ClassName,
+				path = getInstancePath(inst),
+			}
+		end
+		for _k, _v in insertedInstances do
+			_newValue[_k] = _callback(_v, _k - 1, insertedInstances)
+		end
+		-- ▲ ReadonlyArray.map ▲
+		local resultInstances = _newValue
 		return {
-			name = inst.Name,
-			className = inst.ClassName,
-			path = getInstancePath(inst),
+			success = true,
+			assetId = assetId,
+			parentPath = parentPath,
+			insertedCount = #insertedInstances,
+			instances = resultInstances,
+		}
+	end)
+	if wrapperModel then
+		pcall(function()
+			wrapperModel:Destroy()
+		end)
+	end
+	finishRecording(recordingId, insertSuccess)
+	if not insertSuccess then
+		return {
+			error = `Failed to insert asset {assetId}: {tostring(insertResult)}`,
 		}
 	end
-	for _k, _v in insertedInstances do
-		_newValue[_k] = _callback(_v, _k - 1, insertedInstances)
-	end
-	-- ▲ ReadonlyArray.map ▲
-	local resultInstances = _newValue
-	return {
-		success = true,
-		assetId = assetId,
-		parentPath = parentPath,
-		insertedCount = #insertedInstances,
-		instances = resultInstances,
-	}
+	return insertResult
 end
 local function previewAsset(requestData)
 	local assetId = requestData.assetId
@@ -732,26 +733,35 @@ local function previewAsset(requestData)
 		end
 		return node
 	end
-	local hierarchyRoots = {}
-	for _, child in wrapperModel:GetChildren() do
-		local _arg0 = buildHierarchy(child, 0)
-		table.insert(hierarchyRoots, _arg0)
+	local previewSuccess, previewResult = pcall(function()
+		local hierarchyRoots = {}
+		for _, child in wrapperModel:GetChildren() do
+			local _arg0 = buildHierarchy(child, 0)
+			table.insert(hierarchyRoots, _arg0)
+		end
+		return {
+			success = true,
+			assetId = assetId,
+			hierarchy = hierarchyRoots,
+			summary = {
+				totalInstances = totalInstances,
+				classCounts = classCounts,
+				hasScripts = hasScripts,
+				hasAnimations = hasAnimations,
+				hasSounds = hasSounds,
+				hasParticles = hasParticles,
+			},
+		}
+	end)
+	pcall(function()
+		wrapperModel:Destroy()
+	end)
+	if not previewSuccess then
+		return {
+			error = `Failed to preview asset {assetId}: {tostring(previewResult)}`,
+		}
 	end
-	-- CRITICAL: Destroy wrapper to prevent memory leak
-	wrapperModel:Destroy()
-	return {
-		success = true,
-		assetId = assetId,
-		hierarchy = hierarchyRoots,
-		summary = {
-			totalInstances = totalInstances,
-			classCounts = classCounts,
-			hasScripts = hasScripts,
-			hasAnimations = hasAnimations,
-			hasSounds = hasSounds,
-			hasParticles = hasParticles,
-		},
-	}
+	return previewResult
 end
 return {
 	insertAsset = insertAsset,
@@ -774,30 +784,11 @@ local getInstanceByPath = _binding.getInstanceByPath
 local _binding_1 = Recording
 local beginRecording = _binding_1.beginRecording
 local finishRecording = _binding_1.finishRecording
--- Material name lookup table
-local MATERIAL_NAMES = {
-	Plastic = Enum.Material.Plastic,
-	Wood = Enum.Material.Wood,
-	WoodPlanks = Enum.Material.WoodPlanks,
-	Slate = Enum.Material.Slate,
-	Concrete = Enum.Material.Concrete,
-	CorrodedMetal = Enum.Material.CorrodedMetal,
-	DiamondPlate = Enum.Material.DiamondPlate,
-	Foil = Enum.Material.Foil,
-	Grass = Enum.Material.Grass,
-	Ice = Enum.Material.Ice,
-	Marble = Enum.Material.Marble,
-	Granite = Enum.Material.Granite,
-	Brick = Enum.Material.Brick,
-	Pebble = Enum.Material.Pebble,
-	Sand = Enum.Material.Sand,
-	Fabric = Enum.Material.Fabric,
-	SmoothPlastic = Enum.Material.SmoothPlastic,
-	Metal = Enum.Material.Metal,
-	Neon = Enum.Material.Neon,
-	Glass = Enum.Material.Glass,
-	Cobblestone = Enum.Material.Cobblestone,
-}
+local MATERIAL_BY_NAME = {}
+for _, enumItem in Enum.Material:GetEnumItems() do
+	local _name = enumItem.Name
+	MATERIAL_BY_NAME[_name] = enumItem
+end
 -- Shape class mapping
 local SHAPE_CLASSES = {
 	Block = "Part",
@@ -810,6 +801,32 @@ local PALETTE_KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 local function roundTo(n, decimals)
 	local mult = 10 ^ decimals
 	return math.round(n * mult) / mult
+end
+local function encodePaletteKey(index)
+	local base = #PALETTE_KEYS
+	local value = math.floor(index) + 1
+	local encoded = ""
+	while value > 0 do
+		value -= 1
+		local digit = value % base
+		local _arg0 = digit + 1
+		local _arg1 = digit + 1
+		encoded = string.sub(PALETTE_KEYS, _arg0, _arg1) .. encoded
+		value = math.floor(value / base)
+	end
+	return encoded
+end
+local function getVariantName(part)
+	local variantName = part.MaterialVariant
+	if variantName == "" then
+		local ok, variantAttr = pcall(function()
+			return part:GetAttribute("MaterialVariant")
+		end)
+		if ok and type(variantAttr) == "string" then
+			variantName = variantAttr
+		end
+	end
+	return variantName
 end
 local function exportBuild(requestData)
 	local instancePath = requestData.instancePath
@@ -881,12 +898,10 @@ local function exportBuild(requestData)
 		for _, part in baseParts do
 			local colorName = part.BrickColor.Name
 			local materialName = part.Material.Name
-			local variantName = part.MaterialVariant
+			local variantName = getVariantName(part)
 			local combo = if variantName ~= "" then `{colorName}|{materialName}|{variantName}` else `{colorName}|{materialName}`
 			if not (paletteMap[combo] ~= nil) then
-				local _arg0 = keyIndex + 1
-				local _arg1 = keyIndex + 1
-				local key = string.sub(PALETTE_KEYS, _arg0, _arg1)
+				local key = encodePaletteKey(keyIndex)
 				keyIndex += 1
 				paletteMap[combo] = key
 				if variantName ~= "" then
@@ -904,7 +919,8 @@ local function exportBuild(requestData)
 			local sz = part.Size
 			local colorName = part.BrickColor.Name
 			local materialName = part.Material.Name
-			local combo = `{colorName}|{materialName}`
+			local variantName = getVariantName(part)
+			local combo = if variantName ~= "" then `{colorName}|{materialName}|{variantName}` else `{colorName}|{materialName}`
 			local _condition_1 = paletteMap[combo]
 			if _condition_1 == nil then
 				_condition_1 = "a"
@@ -1073,8 +1089,8 @@ local function importBuild(requestData)
 					part.BrickColor = BrickColor.new(colorName)
 				end)
 				pcall(function()
-					local mat = MATERIAL_NAMES[materialName]
-					if mat then
+					local mat = MATERIAL_BY_NAME[materialName]
+					if mat ~= nil then
 						part.Material = mat
 					end
 				end)
@@ -1224,8 +1240,8 @@ local function importScene(requestData)
 						part.BrickColor = BrickColor.new(colorName)
 					end)
 					pcall(function()
-						local mat = MATERIAL_NAMES[materialName]
-						if mat then
+						local mat = MATERIAL_BY_NAME[materialName]
+						if mat ~= nil then
 							part.Material = mat
 						end
 					end)
@@ -1333,6 +1349,91 @@ local convertPropertyValue = _binding.convertPropertyValue
 local _binding_1 = Recording
 local beginRecording = _binding_1.beginRecording
 local finishRecording = _binding_1.finishRecording
+local function processObjectEntries(objects, createFn)
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+	local loopSuccess, loopError = pcall(function()
+		for _, entry in objects do
+			if not (type(entry) == "table") then
+				failureCount += 1
+				table.insert(results, {
+					success = false,
+					error = "Each object entry must be a table",
+				})
+				continue
+			end
+			local objData = entry
+			local className = objData.className
+			local parentPath = objData.parent
+			if not (className ~= "" and className) or not (parentPath ~= "" and parentPath) then
+				failureCount += 1
+				table.insert(results, {
+					success = false,
+					error = "Class name and parent are required",
+				})
+				continue
+			end
+			local entrySuccess, entryResult = pcall(function()
+				return createFn(objData)
+			end)
+			if not entrySuccess then
+				failureCount += 1
+				local _arg0 = {
+					success = false,
+					className = className,
+					parent = parentPath,
+					error = tostring(entryResult),
+				}
+				table.insert(results, _arg0)
+				continue
+			end
+			if entryResult.instance ~= nil then
+				successCount += 1
+				local _arg0 = {
+					success = true,
+					className = entryResult.className,
+					parent = entryResult.parentPath,
+					instancePath = getInstancePath(entryResult.instance),
+					name = entryResult.instance.Name,
+				}
+				table.insert(results, _arg0)
+			else
+				failureCount += 1
+				local _object = {
+					success = false,
+				}
+				local _left = "className"
+				local _condition = entryResult.className
+				if _condition == nil then
+					_condition = className
+				end
+				_object[_left] = _condition
+				local _left_1 = "parent"
+				local _condition_1 = entryResult.parentPath
+				if _condition_1 == nil then
+					_condition_1 = parentPath
+				end
+				_object[_left_1] = _condition_1
+				_object.error = entryResult.error
+				table.insert(results, _object)
+			end
+		end
+	end)
+	if not loopSuccess then
+		failureCount += 1
+		local _arg0 = {
+			success = false,
+			error = `Unexpected mass create failure: {tostring(loopError)}`,
+		}
+		table.insert(results, _arg0)
+	end
+	return {
+		results = results,
+		successCount = successCount,
+		failureCount = failureCount,
+	}
+end
 local function createObject(requestData)
 	local className = requestData.className
 	local parentPath = requestData.parent
@@ -1427,67 +1528,43 @@ local function massCreateObjects(requestData)
 			error = "Objects array is required",
 		}
 	end
-	local results = {}
-	local successCount = 0
-	local failureCount = 0
 	local recordingId = beginRecording("Mass create objects")
-	for _, objData in objects do
+	local _binding_2 = processObjectEntries(objects, function(objData)
 		local className = objData.className
 		local parentPath = objData.parent
 		local name = objData.name
-		local _condition = className
-		if _condition ~= "" and _condition then
-			_condition = parentPath
+		local parentInstance = getInstanceByPath(parentPath)
+		if not parentInstance then
+			return {
+				error = "Parent instance not found",
+				className = className,
+				parentPath = parentPath,
+			}
 		end
-		if _condition ~= "" and _condition then
-			local parentInstance = getInstanceByPath(parentPath)
-			if parentInstance then
-				local success, newInstance = pcall(function()
-					local instance = Instance.new(className)
-					if name ~= "" and name then
-						instance.Name = name
-					end
-					instance.Parent = parentInstance
-					return instance
-				end)
-				if success and newInstance then
-					successCount += 1
-					local _arg0 = {
-						success = true,
-						className = className,
-						parent = parentPath,
-						instancePath = getInstancePath(newInstance),
-						name = newInstance.Name,
-					}
-					table.insert(results, _arg0)
-				else
-					failureCount += 1
-					local _arg0 = {
-						success = false,
-						className = className,
-						parent = parentPath,
-						error = tostring(newInstance),
-					}
-					table.insert(results, _arg0)
-				end
-			else
-				failureCount += 1
-				local _arg0 = {
-					success = false,
-					className = className,
-					parent = parentPath,
-					error = "Parent instance not found",
-				}
-				table.insert(results, _arg0)
+		local success, newInstance = pcall(function()
+			local instance = Instance.new(className)
+			if name ~= "" and name then
+				instance.Name = name
 			end
-		else
-			failureCount += 1
-			table.insert(results, {
-				success = false,
-				error = "Class name and parent are required",
-			})
+			instance.Parent = parentInstance
+			return instance
+		end)
+		if not success or not newInstance then
+			return {
+				error = tostring(newInstance),
+				className = className,
+				parentPath = parentPath,
+			}
 		end
-	end
+		return {
+			instance = newInstance,
+			className = className,
+			parentPath = parentPath,
+		}
+	end)
+	local results = _binding_2.results
+	local successCount = _binding_2.successCount
+	local failureCount = _binding_2.failureCount
 	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
@@ -1505,76 +1582,54 @@ local function massCreateObjectsWithProperties(requestData)
 			error = "Objects array is required",
 		}
 	end
-	local results = {}
-	local successCount = 0
-	local failureCount = 0
 	local recordingId = beginRecording("Mass create objects with properties")
-	for _, objData in objects do
+	local _binding_2 = processObjectEntries(objects, function(objData)
 		local className = objData.className
 		local parentPath = objData.parent
 		local name = objData.name
-		local properties = (objData.properties) or {}
-		local _condition = className
-		if _condition ~= "" and _condition then
-			_condition = parentPath
+		local propertiesRaw = objData.properties
+		local properties = if type(propertiesRaw) == "table" then propertiesRaw else ({})
+		local parentInstance = getInstanceByPath(parentPath)
+		if not parentInstance then
+			return {
+				error = "Parent instance not found",
+				className = className,
+				parentPath = parentPath,
+			}
 		end
-		if _condition ~= "" and _condition then
-			local parentInstance = getInstanceByPath(parentPath)
-			if parentInstance then
-				local success, newInstance = pcall(function()
-					local instance = Instance.new(className)
-					if name ~= "" and name then
-						instance.Name = name
-					end
-					instance.Parent = parentInstance
-					for propName, propValue in pairs(properties) do
-						pcall(function()
-							local converted = convertPropertyValue(instance, propName, propValue)
-							if converted ~= nil then
-								instance[propName] = converted
-							end
-						end)
-					end
-					return instance
-				end)
-				if success and newInstance then
-					successCount += 1
-					local _arg0 = {
-						success = true,
-						className = className,
-						parent = parentPath,
-						instancePath = getInstancePath(newInstance),
-						name = newInstance.Name,
-					}
-					table.insert(results, _arg0)
-				else
-					failureCount += 1
-					local _arg0 = {
-						success = false,
-						className = className,
-						parent = parentPath,
-						error = tostring(newInstance),
-					}
-					table.insert(results, _arg0)
-				end
-			else
-				failureCount += 1
-				local _arg0 = {
-					success = false,
-					className = className,
-					parent = parentPath,
-					error = "Parent instance not found",
-				}
-				table.insert(results, _arg0)
+		local success, newInstance = pcall(function()
+			local instance = Instance.new(className)
+			if name ~= "" and name then
+				instance.Name = name
 			end
-		else
-			failureCount += 1
-			table.insert(results, {
-				success = false,
-				error = "Class name and parent are required",
-			})
+			instance.Parent = parentInstance
+			for propName, propValue in pairs(properties) do
+				pcall(function()
+					local propNameStr = tostring(propName)
+					local converted = convertPropertyValue(instance, propNameStr, propValue)
+					if converted ~= nil then
+						instance[propNameStr] = converted
+					end
+				end)
+			end
+			return instance
+		end)
+		if not success or not newInstance then
+			return {
+				error = tostring(newInstance),
+				className = className,
+				parentPath = parentPath,
+			}
 		end
-	end
+		return {
+			instance = newInstance,
+			className = className,
+			parentPath = parentPath,
+		}
+	end)
+	local results = _binding_2.results
+	local successCount = _binding_2.successCount
+	local failureCount = _binding_2.failureCount
 	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
@@ -6741,14 +6796,10 @@ local function getInstanceByPath(path)
 	end
 	local current = game
 	for _, part in parts do
-		local _result = current
-		if _result ~= nil then
-			_result = _result:FindFirstChild(part)
-		end
-		current = _result
 		if not current then
 			return nil
 		end
+		current = current:FindFirstChild(part)
 	end
 	return current
 end

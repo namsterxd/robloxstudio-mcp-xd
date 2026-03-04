@@ -5,7 +5,7 @@ const require = createRequire(import.meta.url);
 const { version: VERSION } = require('../package.json');
 
 const server = new RobloxStudioMCPServer({
-  name: 'robloxstudio-mcp-inspector',
+  name: 'robloxstudio-mcp-xd-inspector',
   version: VERSION,
   tools: getReadOnlyTools(),
 });

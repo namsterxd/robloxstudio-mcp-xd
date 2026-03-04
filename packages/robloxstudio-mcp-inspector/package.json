@@ -1,11 +1,11 @@
 {
-  "name": "robloxstudio-mcp-inspector",
+  "name": "robloxstudio-mcp-xd-inspector",
   "version": "2.5.1",
   "description": "Read-only MCP Server for Roblox Studio - Inspect Studio data, scripts, and objects through AI tools (no write operations)",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "robloxstudio-mcp-inspector": "dist/index.js"
+    "robloxstudio-mcp-xd-inspector": "dist/index.js"
   },
   "files": [
     "dist/**/*",
@@ -30,11 +30,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/boshyxd/robloxstudio-mcp.git"
+    "url": "https://github.com/namsterxd/robloxstudio-mcp-xd.git"
   },
-  "homepage": "https://github.com/boshyxd/robloxstudio-mcp#readme",
+  "homepage": "https://github.com/namsterxd/robloxstudio-mcp-xd#readme",
   "bugs": {
-    "url": "https://github.com/boshyxd/robloxstudio-mcp/issues"
+    "url": "https://github.com/namsterxd/robloxstudio-mcp-xd/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",

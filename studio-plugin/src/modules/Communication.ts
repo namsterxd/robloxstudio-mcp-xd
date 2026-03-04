@@ -374,14 +374,14 @@ function deactivateAll() {
 }
 
 function checkForUpdates() {
-	task.spawn(() => {
-		const [success, result] = pcall(() => {
-			return HttpService.RequestAsync({
-				Url: "https://registry.npmjs.org/robloxstudio-mcp/latest",
-				Method: "GET",
-				Headers: { Accept: "application/json" },
+		task.spawn(() => {
+			const [success, result] = pcall(() => {
+				return HttpService.RequestAsync({
+					Url: "https://registry.npmjs.org/robloxstudio-mcp-xd/latest",
+					Method: "GET",
+					Headers: { Accept: "application/json" },
+				});
 			});
-		});
 
 		if (success && result.Success) {
 			const [ok, data] = pcall(() => HttpService.JSONDecode(result.Body) as { version?: string });
@@ -389,7 +389,7 @@ function checkForUpdates() {
 				const latestVersion = data.version;
 				if (Utils.compareVersions(State.CURRENT_VERSION, latestVersion) < 0) {
 					const ui = UI.getElements();
-					ui.updateBannerText.Text = `v${latestVersion} available - github.com/boshyxd/robloxstudio-mcp`;
+					ui.updateBannerText.Text = `v${latestVersion} available - github.com/namsterxd/robloxstudio-mcp-xd`;
 					ui.updateBanner.Visible = true;
 					ui.contentFrame.Position = new UDim2(0, 8, 0, 92);
 					ui.contentFrame.Size = new UDim2(1, -16, 1, -100);

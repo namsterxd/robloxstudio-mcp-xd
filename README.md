@@ -2,7 +2,7 @@
 
 **Connect AI assistants like Claude and Gemini to Roblox Studio**
 
-[![NPM Version](https://img.shields.io/npm/v/robloxstudio-mcp)](https://www.npmjs.com/package/robloxstudio-mcp)
+[![NPM Version](https://img.shields.io/npm/v/robloxstudio-mcp-xd)](https://www.npmjs.com/package/robloxstudio-mcp-xd)
 
 ---
 
@@ -12,23 +12,23 @@ An MCP server that lets AI explore your game structure, read/edit scripts, and p
 
 ## Setup
 
-1. Install the [Studio plugin](https://github.com/boshyxd/robloxstudio-mcp/releases) to your Plugins folder
+1. Install the [Studio plugin](https://github.com/namsterxd/robloxstudio-mcp-xd/releases) to your Plugins folder
 2. Enable **Allow HTTP Requests** in Experience Settings > Security
 3. Connect your AI:
 
 **Claude Code:**
 ```bash
-claude mcp add robloxstudio -- npx -y robloxstudio-mcp@latest
+claude mcp add robloxstudio -- npx -y robloxstudio-mcp-xd@latest
 ```
 
 **Codex CLI:**
 ```bash
-codex mcp add robloxstudio -- npx -y robloxstudio-mcp@latest
+codex mcp add robloxstudio -- npx -y robloxstudio-mcp-xd@latest
 ```
 
 **Gemini CLI:**
 ```bash
-gemini mcp add robloxstudio npx --trust -- -y robloxstudio-mcp@latest
+gemini mcp add robloxstudio npx --trust -- -y robloxstudio-mcp-xd@latest
 ```
 
 Plugin shows "Connected" when ready.
@@ -39,9 +39,9 @@ Plugin shows "Connected" when ready.
 ```json
 {
   "mcpServers": {
-    "robloxstudio-mcp": {
+    "robloxstudio-mcp-xd": {
       "command": "npx",
-      "args": ["-y", "robloxstudio-mcp@latest"]
+      "args": ["-y", "robloxstudio-mcp-xd@latest"]
     }
   }
 }
@@ -51,9 +51,9 @@ Plugin shows "Connected" when ready.
 ```json
 {
   "mcpServers": {
-    "robloxstudio-mcp": {
+    "robloxstudio-mcp-xd": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "robloxstudio-mcp@latest"]
+      "args": ["/c", "npx", "-y", "robloxstudio-mcp-xd@latest"]
     }
   }
 }
@@ -67,9 +67,9 @@ Ask things like: *"What's the structure of this game?"*, *"Find scripts with dep
 <details>
 <summary><strong>Inspector Edition (Read-Only)</strong></summary>
 
-### robloxstudio-mcp-inspector
+### robloxstudio-mcp-xd-inspector
 
-[![NPM Version](https://img.shields.io/npm/v/robloxstudio-mcp-inspector)](https://www.npmjs.com/package/robloxstudio-mcp-inspector)
+[![NPM Version](https://img.shields.io/npm/v/robloxstudio-mcp-xd-inspector)](https://www.npmjs.com/package/robloxstudio-mcp-xd-inspector)
 
 A lighter, **read-only** version that only exposes inspection tools. No writes, no script edits, no object creation/deletion. Ideal for safely browsing game structure, reviewing scripts, and debugging without risk of accidental changes.
 
@@ -79,17 +79,17 @@ A lighter, **read-only** version that only exposes inspection tools. No writes, 
 
 **Claude:**
 ```bash
-claude mcp add robloxstudio-inspector -- npx -y robloxstudio-mcp-inspector@latest
+claude mcp add robloxstudio-inspector -- npx -y robloxstudio-mcp-xd-inspector@latest
 ```
 
 **Codex:**
 ```bash
-codex mcp add robloxstudio-inspector -- npx -y robloxstudio-mcp-inspector@latest
+codex mcp add robloxstudio-inspector -- npx -y robloxstudio-mcp-xd-inspector@latest
 ```
 
 **Gemini:**
 ```bash
-gemini mcp add robloxstudio-inspector npx --trust -- -y robloxstudio-mcp-inspector@latest
+gemini mcp add robloxstudio-inspector npx --trust -- -y robloxstudio-mcp-xd-inspector@latest
 ```
 
 <details>
@@ -98,9 +98,9 @@ gemini mcp add robloxstudio-inspector npx --trust -- -y robloxstudio-mcp-inspect
 ```json
 {
   "mcpServers": {
-    "robloxstudio-mcp-inspector": {
+    "robloxstudio-mcp-xd-inspector": {
       "command": "npx",
-      "args": ["-y", "robloxstudio-mcp-inspector@latest"]
+      "args": ["-y", "robloxstudio-mcp-xd-inspector@latest"]
     }
   }
 }
@@ -110,9 +110,9 @@ gemini mcp add robloxstudio-inspector npx --trust -- -y robloxstudio-mcp-inspect
 ```json
 {
   "mcpServers": {
-    "robloxstudio-mcp-inspector": {
+    "robloxstudio-mcp-xd-inspector": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "robloxstudio-mcp-inspector@latest"]
+      "args": ["/c", "npx", "-y", "robloxstudio-mcp-xd-inspector@latest"]
     }
   }
 }
@@ -125,4 +125,4 @@ gemini mcp add robloxstudio-inspector npx --trust -- -y robloxstudio-mcp-inspect
 
 <!-- VERSION_LINE -->**v2.5.1** - 39 tools, inspector edition, monorepo architecture
 
-[Report Issues](https://github.com/boshyxd/robloxstudio-mcp/issues) | [DevForum](https://devforum.roblox.com/t/v180-roblox-studio-mcp-speed-up-your-workflow-by-letting-ai-read-paths-and-properties/3707071) | MIT Licensed
+[Report Issues](https://github.com/namsterxd/robloxstudio-mcp-xd/issues) | [DevForum](https://devforum.roblox.com/t/v180-roblox-studio-mcp-speed-up-your-workflow-by-letting-ai-read-paths-and-properties/3707071) | MIT Licensed

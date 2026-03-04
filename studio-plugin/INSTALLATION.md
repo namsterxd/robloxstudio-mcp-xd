@@ -14,7 +14,7 @@ Complete your AI assistant integration with this easy-to-install Studio plugin. 
 
 ### Method 2: Direct Download
 1. **Download the plugin:**
-   - **GitHub Release**: [Download MCPPlugin.rbxmx](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/MCPPlugin.rbxmx)
+   - **GitHub Release**: [Download MCPPlugin.rbxmx](https://github.com/namsterxd/robloxstudio-mcp-xd/releases/latest/download/MCPPlugin.rbxmx)
    - This is the official Roblox plugin format
 
 2. **Install to plugins folder:**
@@ -26,7 +26,7 @@ Complete your AI assistant integration with this easy-to-install Studio plugin. 
 
 ### Method 3: Save as Local Plugin
 1. **Copy the plugin code:**
-   - Open [plugin.server.luau](https://github.com/boshyxd/robloxstudio-mcp/blob/main/studio-plugin/plugin.server.luau) on GitHub
+   - Open [plugin.server.luau](https://github.com/namsterxd/robloxstudio-mcp-xd/blob/main/studio-plugin/plugin.server.luau) on GitHub
    - Copy all the code (Ctrl+A, Ctrl+C)
 
 2. **Create in Studio:**
@@ -53,16 +53,16 @@ Choose your AI assistant:
 
 **For Claude Code:**
 ```bash
-claude mcp add robloxstudio-mcp
+claude mcp add robloxstudio-mcp-xd
 ```
 
 **For Claude Desktop/Others:**
 ```json
 {
   "mcpServers": {
-    "robloxstudio-mcp": {
+    "robloxstudio-mcp-xd": {
       "command": "npx",
-      "args": ["-y", "robloxstudio-mcp"]
+      "args": ["-y", "robloxstudio-mcp-xd@latest"]
     }
   }
 }
@@ -75,9 +75,9 @@ If you encounter issues, you may need to run it through `cmd`. Update your confi
 ```json
 {
   "mcpServers": {
-    "robloxstudio-mcp": {
+    "robloxstudio-mcp-xd": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "robloxstudio-mcp@latest"]
+      "args": ["/c", "npx", "-y", "robloxstudio-mcp-xd@latest"]
     }
   }
 }
