@@ -49,23 +49,37 @@ describe('Tool schema compatibility', () => {
     expect(missing).toEqual([]);
   });
 
-  test('create_build schema uses object parts', () => {
+  test('create_build schema accepts object and tuple parts', () => {
     const createBuild = TOOL_DEFINITIONS.find(tool => tool.name === 'create_build');
     expect(createBuild).toBeDefined();
 
     const parts = (createBuild as any).inputSchema.properties.parts;
     expect(parts.type).toBe('array');
-    expect(parts.items.type).toBe('object');
-    expect(parts.items.required).toEqual(['position', 'size', 'rotation', 'paletteKey']);
+    expect(Array.isArray(parts.items.anyOf)).toBe(true);
+
+    const objectBranch = parts.items.anyOf.find((entry: any) => entry.type === 'object');
+    const tupleBranch = parts.items.anyOf.find((entry: any) => entry.type === 'array');
+
+    expect(objectBranch.required).toEqual(['position', 'size', 'rotation', 'paletteKey']);
+    expect(tupleBranch.minItems).toBe(10);
+    expect(tupleBranch.maxItems).toBe(12);
+    expect(Array.isArray(tupleBranch.items.anyOf)).toBe(true);
   });
 
-  test('import_scene schema uses object placements', () => {
+  test('import_scene schema accepts object and tuple placements', () => {
     const importScene = TOOL_DEFINITIONS.find(tool => tool.name === 'import_scene');
     expect(importScene).toBeDefined();
 
     const place = (importScene as any).inputSchema.properties.sceneData.properties.place;
     expect(place.type).toBe('array');
-    expect(place.items.type).toBe('object');
-    expect(place.items.required).toEqual(['modelKey', 'position']);
+    expect(Array.isArray(place.items.anyOf)).toBe(true);
+
+    const objectBranch = place.items.anyOf.find((entry: any) => entry.type === 'object');
+    const tupleBranch = place.items.anyOf.find((entry: any) => entry.type === 'array');
+
+    expect(objectBranch.required).toEqual(['modelKey', 'position']);
+    expect(tupleBranch.minItems).toBe(2);
+    expect(tupleBranch.maxItems).toBe(3);
+    expect(Array.isArray(tupleBranch.items.anyOf)).toBe(true);
   });
 });

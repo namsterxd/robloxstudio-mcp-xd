@@ -989,44 +989,59 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
         parts: {
           type: 'array',
-          description: 'Array of part objects. Each object: {position:[x,y,z], size:[x,y,z], rotation:[x,y,z], paletteKey, shape?, transparency?}. Legacy compact tuple arrays are still accepted at runtime for backwards compatibility.',
+          description: 'Array of parts. Preferred object format: {position:[x,y,z], size:[x,y,z], rotation:[x,y,z], paletteKey, shape?, transparency?}. Legacy compact tuple format [posX,posY,posZ,sizeX,sizeY,sizeZ,rotX,rotY,rotZ,paletteKey,shape?,transparency?] is also accepted.',
           items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['position', 'size', 'rotation', 'paletteKey'],
-            properties: {
-              position: {
+            anyOf: [
+              {
+                type: 'object',
+                additionalProperties: false,
+                required: ['position', 'size', 'rotation', 'paletteKey'],
+                properties: {
+                  position: {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
+                  },
+                  size: {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
+                  },
+                  rotation: {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
+                  },
+                  paletteKey: {
+                    type: 'string',
+                    minLength: 1
+                  },
+                  shape: {
+                    type: 'string',
+                    enum: ['Block', 'Wedge', 'Cylinder', 'Ball', 'CornerWedge']
+                  },
+                  transparency: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1
+                  }
+                }
+              },
+              {
                 type: 'array',
-                items: { type: 'number' },
-                minItems: 3,
-                maxItems: 3
-              },
-              size: {
-                type: 'array',
-                items: { type: 'number' },
-                minItems: 3,
-                maxItems: 3
-              },
-              rotation: {
-                type: 'array',
-                items: { type: 'number' },
-                minItems: 3,
-                maxItems: 3
-              },
-              paletteKey: {
-                type: 'string',
-                minLength: 1
-              },
-              shape: {
-                type: 'string',
-                enum: ['Block', 'Wedge', 'Cylinder', 'Ball', 'CornerWedge']
-              },
-              transparency: {
-                type: 'number',
-                minimum: 0,
-                maximum: 1
+                minItems: 10,
+                maxItems: 12,
+                items: {
+                  anyOf: [
+                    { type: 'number' },
+                    { type: 'string' }
+                  ]
+                }
               }
-            }
+            ]
           }
         },
         bounds: {
@@ -1202,29 +1217,52 @@ part(0,2,0,2,1,1,"b")`,
             },
             place: {
               type: 'array',
-              description: 'Array of placements in object format: {modelKey, position:[x,y,z], rotation?:[x,y,z]}. Legacy tuple format is still accepted at runtime for backwards compatibility.',
+              description: 'Array of placements. Preferred object format: {modelKey, position:[x,y,z], rotation?:[x,y,z]}. Legacy tuple format [modelKey, [x,y,z], [rotX,rotY,rotZ]?] is also accepted.',
               items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['modelKey', 'position'],
-                properties: {
-                  modelKey: {
-                    type: 'string',
-                    minLength: 1
+                anyOf: [
+                  {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['modelKey', 'position'],
+                    properties: {
+                      modelKey: {
+                        type: 'string',
+                        minLength: 1
+                      },
+                      position: {
+                        type: 'array',
+                        items: { type: 'number' },
+                        minItems: 3,
+                        maxItems: 3
+                      },
+                      rotation: {
+                        type: 'array',
+                        items: { type: 'number' },
+                        minItems: 3,
+                        maxItems: 3
+                      }
+                    }
                   },
-                  position: {
+                  {
                     type: 'array',
-                    items: { type: 'number' },
-                    minItems: 3,
-                    maxItems: 3
-                  },
-                  rotation: {
-                    type: 'array',
-                    items: { type: 'number' },
-                    minItems: 3,
-                    maxItems: 3
+                    minItems: 2,
+                    maxItems: 3,
+                    items: {
+                      anyOf: [
+                        {
+                          type: 'string',
+                          minLength: 1
+                        },
+                        {
+                          type: 'array',
+                          items: { type: 'number' },
+                          minItems: 3,
+                          maxItems: 3
+                        }
+                      ]
+                    }
                   }
-                }
+                ]
               }
             },
             custom: {
