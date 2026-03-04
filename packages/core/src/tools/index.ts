@@ -953,24 +953,19 @@ export class RobloxStudioTools {
     id: string,
     style: string,
     palette: Record<string, [string, string]>,
-    parts: any[][],
+    parts: unknown,
     bounds?: [number, number, number]
   ) {
-    if (!id || !palette || !parts || parts.length === 0) {
+    if (!id || !palette || !parts) {
       throw new Error('id, palette, and parts are required for create_build');
     }
 
-    // Validate part arrays have at least 10 elements (pos3 + size3 + rot3 + paletteKey)
-    for (let i = 0; i < parts.length; i++) {
-      if (!Array.isArray(parts[i]) || parts[i].length < 10) {
-        throw new Error(`Part ${i} must have at least 10 elements: [posX, posY, posZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey]`);
-      }
-    }
+    const normalizedParts = this.normalizeBuildParts(parts);
 
     // Auto-compute bounds if not provided
-    const computedBounds = bounds || this.computeBounds(parts);
+    const computedBounds = bounds || this.computeBounds(normalizedParts);
 
-    const buildData = { id, style, bounds: computedBounds, palette, parts };
+    const buildData = { id, style, bounds: computedBounds, palette, parts: normalizedParts };
 
     const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${id}.json`);
     const dirPath = path.dirname(filePath);
@@ -989,13 +984,91 @@ export class RobloxStudioTools {
             id,
             style,
             bounds: computedBounds,
-            partCount: parts.length,
+            partCount: normalizedParts.length,
             paletteKeys: Object.keys(palette),
             savedTo: filePath
           })
         }
       ]
     };
+  }
+
+  private normalizeBuildParts(parts: unknown): any[][] {
+    if (!Array.isArray(parts) || parts.length === 0) {
+      throw new Error('parts must be a non-empty array');
+    }
+
+    const normalizeVec3 = (value: unknown, field: string, index: number): [number, number, number] => {
+      if (!Array.isArray(value) || value.length !== 3) {
+        throw new Error(`Part ${index} field "${field}" must be a [x, y, z] array`);
+      }
+      const [x, y, z] = value;
+      if (
+        typeof x !== 'number' || !Number.isFinite(x)
+        || typeof y !== 'number' || !Number.isFinite(y)
+        || typeof z !== 'number' || !Number.isFinite(z)
+      ) {
+        throw new Error(`Part ${index} field "${field}" must contain finite numbers`);
+      }
+      return [x, y, z];
+    };
+
+    const normalized: any[][] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+
+      if (Array.isArray(part)) {
+        if (part.length < 10) {
+          throw new Error(`Part ${i} must have at least 10 elements: [posX, posY, posZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey]`);
+        }
+        normalized.push(part);
+        continue;
+      }
+
+      if (!part || typeof part !== 'object') {
+        throw new Error(`Part ${i} must be an array tuple or object`);
+      }
+
+      const record = part as Record<string, unknown>;
+      const position = normalizeVec3(record.position, 'position', i);
+      const size = normalizeVec3(record.size, 'size', i);
+      const rotation = normalizeVec3(record.rotation, 'rotation', i);
+      const paletteKey = record.paletteKey;
+
+      if (typeof paletteKey !== 'string' || paletteKey.trim() === '') {
+        throw new Error(`Part ${i} field "paletteKey" must be a non-empty string`);
+      }
+
+      const tuple: any[] = [
+        position[0], position[1], position[2],
+        size[0], size[1], size[2],
+        rotation[0], rotation[1], rotation[2],
+        paletteKey.trim()
+      ];
+
+      const shape = record.shape;
+      if (shape !== undefined) {
+        if (typeof shape !== 'string' || shape.trim() === '') {
+          throw new Error(`Part ${i} field "shape" must be a non-empty string when provided`);
+        }
+        tuple.push(shape);
+      }
+
+      const transparency = record.transparency;
+      if (transparency !== undefined) {
+        if (typeof transparency !== 'number' || !Number.isFinite(transparency) || transparency < 0 || transparency > 1) {
+          throw new Error(`Part ${i} field "transparency" must be a number between 0 and 1`);
+        }
+        if (shape === undefined) {
+          tuple.push('Block');
+        }
+        tuple.push(transparency);
+      }
+
+      normalized.push(tuple);
+    }
+
+    return normalized;
   }
 
   private computeBounds(parts: any[][]): [number, number, number] {

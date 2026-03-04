@@ -1285,7 +1285,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'create_build',
     category: 'write',
-    description: 'Create a new build model from scratch and save it to the library. Define parts using compact arrays [posX, posY, posZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey, shape?, transparency?]. Palette maps short keys to [BrickColor, Material] pairs. The build is saved and can be referenced by import_build or import_scene.',
+    description: 'Create a new build model from scratch and save it to the library. Define parts using objects with position/size/rotation vectors and a paletteKey. Legacy compact tuple arrays are still accepted at runtime. Palette maps short keys to [BrickColor, Material] pairs. The build is saved and can be referenced by import_build or import_scene.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1304,12 +1304,43 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
         parts: {
           type: 'array',
-          description: 'Array of part arrays. Each: [posX, posY, posZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey, shape?, transparency?]. Shapes: Block (default), Wedge, Cylinder, Ball, CornerWedge.',
+          description: 'Array of part objects. Each object: {position:[x,y,z], size:[x,y,z], rotation:[x,y,z], paletteKey, shape?, transparency?}. Legacy compact tuple arrays are still accepted at runtime for backwards compatibility.',
           items: {
-            type: 'array',
-            minItems: 10,
-            items: {
-              anyOf: [{ type: 'number' }, { type: 'string' }]
+            type: 'object',
+            additionalProperties: false,
+            required: ['position', 'size', 'rotation', 'paletteKey'],
+            properties: {
+              position: {
+                type: 'array',
+                items: { type: 'number' },
+                minItems: 3,
+                maxItems: 3
+              },
+              size: {
+                type: 'array',
+                items: { type: 'number' },
+                minItems: 3,
+                maxItems: 3
+              },
+              rotation: {
+                type: 'array',
+                items: { type: 'number' },
+                minItems: 3,
+                maxItems: 3
+              },
+              paletteKey: {
+                type: 'string',
+                minLength: 1
+              },
+              shape: {
+                type: 'string',
+                enum: ['Block', 'Wedge', 'Cylinder', 'Ball', 'CornerWedge']
+              },
+              transparency: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1
+              }
             }
           }
         },
@@ -1478,7 +1509,7 @@ part(0,2,0,2,1,1,"b")`,
       properties: {
         sceneData: {
           type: 'object',
-          description: 'Scene layout object with: models (map of key to library build ID), place (array of [key, position, rotation?]), and optional custom (array of inline build objects with name, position, palette, parts)',
+          description: 'Scene layout object with: models (map of key to library build ID), place (array of placement objects), and optional custom (array of inline build objects with name, position, palette, parts)',
           properties: {
             models: {
               type: 'object',
@@ -1486,52 +1517,29 @@ part(0,2,0,2,1,1,"b")`,
             },
             place: {
               type: 'array',
-              description: 'Array of placements. Preferred format: {modelKey, position:[x,y,z], rotation?:[x,y,z]}. Legacy tuple format [modelKey, [x,y,z], [rotX?,rotY?,rotZ?]] is also accepted.',
+              description: 'Array of placements in object format: {modelKey, position:[x,y,z], rotation?:[x,y,z]}. Legacy tuple format is still accepted at runtime for backwards compatibility.',
               items: {
-                anyOf: [
-                  {
-                    type: 'object',
-                    additionalProperties: false,
-                    required: ['modelKey', 'position'],
-                    properties: {
-                      modelKey: {
-                        type: 'string',
-                        minLength: 1
-                      },
-                      position: {
-                        type: 'array',
-                        items: { type: 'number' },
-                        minItems: 3,
-                        maxItems: 3
-                      },
-                      rotation: {
-                        type: 'array',
-                        items: { type: 'number' },
-                        minItems: 3,
-                        maxItems: 3
-                      }
-                    }
+                type: 'object',
+                additionalProperties: false,
+                required: ['modelKey', 'position'],
+                properties: {
+                  modelKey: {
+                    type: 'string',
+                    minLength: 1
                   },
-                  {
+                  position: {
                     type: 'array',
-                    minItems: 2,
-                    maxItems: 3,
-                    items: {
-                      anyOf: [
-                        {
-                          type: 'string',
-                          minLength: 1
-                        },
-                        {
-                          type: 'array',
-                          items: { type: 'number' },
-                          minItems: 3,
-                          maxItems: 3
-                        }
-                      ]
-                    }
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
+                  },
+                  rotation: {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 3,
+                    maxItems: 3
                   }
-                ]
+                }
               }
             },
             custom: {
