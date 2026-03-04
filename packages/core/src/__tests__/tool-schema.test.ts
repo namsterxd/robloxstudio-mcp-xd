@@ -62,7 +62,7 @@ describe('Tool schema compatibility', () => {
 
     expect(objectBranch.required).toEqual(['position', 'size', 'rotation', 'paletteKey']);
     expect(tupleBranch.minItems).toBe(10);
-    expect(tupleBranch.maxItems).toBe(12);
+    expect(tupleBranch.maxItems).toBeUndefined();
     expect(Array.isArray(tupleBranch.items.anyOf)).toBe(true);
   });
 

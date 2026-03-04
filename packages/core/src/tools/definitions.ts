@@ -1348,7 +1348,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
               {
                 type: 'array',
                 minItems: 10,
-                maxItems: 12,
                 items: {
                   anyOf: [
                     { type: 'number' },

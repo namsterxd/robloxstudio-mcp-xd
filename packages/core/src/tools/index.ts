@@ -999,20 +999,23 @@ export class RobloxStudioTools {
       throw new Error('palette must be an object mapping keys to [BrickColor, Material] tuples');
     }
 
-    const normalized: Record<string, [string, string] | [string, string, string]> = {};
+    const normalized: Record<string, [string, string] | [string, string, string]> = Object.create(null) as Record<string, [string, string] | [string, string, string]>;
     for (const [rawKey, value] of Object.entries(palette)) {
       const key = rawKey.trim();
       if (!key) {
         throw new Error('palette keys must be non-empty strings');
       }
-      if (normalized[key]) {
+      if (Object.prototype.hasOwnProperty.call(normalized, key)) {
         throw new Error(`palette contains duplicate key after trimming: "${key}"`);
       }
       if (!Array.isArray(value) || value.length < 2 || value.length > 3) {
         throw new Error(`Palette key "${rawKey}" must map to [BrickColor, Material] or [BrickColor, Material, MaterialVariant]`);
       }
+      if (!value.every(entry => typeof entry === 'string' && entry.trim() !== '')) {
+        throw new Error(`Palette key "${rawKey}" must contain only non-empty string values`);
+      }
 
-      normalized[key] = value as [string, string] | [string, string, string];
+      normalized[key] = value.map(entry => entry.trim()) as [string, string] | [string, string, string];
     }
 
     if (Object.keys(normalized).length === 0) {
