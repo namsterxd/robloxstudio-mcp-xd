@@ -804,6 +804,8 @@ export class RobloxStudioTools {
       throw new Error('parts must be a non-empty array');
     }
 
+    const ALLOWED_SHAPES = new Set(['Block', 'Wedge', 'Cylinder', 'Ball', 'CornerWedge']);
+
     const normalizeVec3 = (value: unknown, field: string, index: number): [number, number, number] => {
       if (!Array.isArray(value) || value.length !== 3) {
         throw new Error(`Part ${index} field "${field}" must be a [x, y, z] array`);
@@ -819,6 +821,24 @@ export class RobloxStudioTools {
       return [x, y, z];
     };
 
+    const normalizeShape = (value: unknown, index: number): string => {
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error(`Part ${index} field "shape" must be a non-empty string when provided`);
+      }
+      const normalizedShape = value.trim();
+      if (!ALLOWED_SHAPES.has(normalizedShape)) {
+        throw new Error(`Part ${index} field "shape" must be one of: Block, Wedge, Cylinder, Ball, CornerWedge`);
+      }
+      return normalizedShape;
+    };
+
+    const normalizeTransparency = (value: unknown, index: number): number => {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+        throw new Error(`Part ${index} field "transparency" must be a number between 0 and 1`);
+      }
+      return value;
+    };
+
     const normalized: any[][] = [];
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -827,7 +847,42 @@ export class RobloxStudioTools {
         if (part.length < 10) {
           throw new Error(`Part ${i} must have at least 10 elements: [posX, posY, posZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey]`);
         }
-        normalized.push(part);
+
+        const [px, py, pz, sx, sy, sz, rx, ry, rz, paletteKey] = part;
+        const numericCore = [px, py, pz, sx, sy, sz, rx, ry, rz];
+        if (!numericCore.every(value => typeof value === 'number' && Number.isFinite(value))) {
+          throw new Error(`Part ${i} must use finite numbers for position, size, and rotation`);
+        }
+        if (typeof paletteKey !== 'string' || paletteKey.trim() === '') {
+          throw new Error(`Part ${i} field "paletteKey" must be a non-empty string`);
+        }
+
+        const tuple: any[] = [
+          px, py, pz,
+          sx, sy, sz,
+          rx, ry, rz,
+          paletteKey.trim()
+        ];
+
+        const rawShape = part[10];
+        const rawTransparency = part[11];
+        const hasTransparency = rawTransparency !== undefined;
+
+        if (rawShape !== undefined) {
+          tuple.push(normalizeShape(rawShape, i));
+        } else if (hasTransparency) {
+          tuple.push('Block');
+        }
+
+        if (hasTransparency) {
+          tuple.push(normalizeTransparency(rawTransparency, i));
+        }
+
+        if (part.length > 12) {
+          tuple.push(...part.slice(12));
+        }
+
+        normalized.push(tuple);
         continue;
       }
 
@@ -854,21 +909,15 @@ export class RobloxStudioTools {
 
       const shape = record.shape;
       if (shape !== undefined) {
-        if (typeof shape !== 'string' || shape.trim() === '') {
-          throw new Error(`Part ${i} field "shape" must be a non-empty string when provided`);
-        }
-        tuple.push(shape);
+        tuple.push(normalizeShape(shape, i));
       }
 
       const transparency = record.transparency;
       if (transparency !== undefined) {
-        if (typeof transparency !== 'number' || !Number.isFinite(transparency) || transparency < 0 || transparency > 1) {
-          throw new Error(`Part ${i} field "transparency" must be a number between 0 and 1`);
-        }
         if (shape === undefined) {
           tuple.push('Block');
         }
-        tuple.push(transparency);
+        tuple.push(normalizeTransparency(transparency, i));
       }
 
       normalized.push(tuple);
