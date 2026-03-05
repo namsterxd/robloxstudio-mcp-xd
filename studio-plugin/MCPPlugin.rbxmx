@@ -313,7 +313,7 @@ local function discoverPort()
 		local port = State.BASE_PORT + offset
 		local success, result = pcall(function()
 			return HttpService:RequestAsync({
-				Url = `http://localhost:{port}/status`,
+				Url = `http://127.0.0.1:{port}/status`,
 				Method = "GET",
 				Headers = {
 					["Content-Type"] = "application/json",
@@ -373,7 +373,7 @@ local function activatePlugin(connIndex)
 		local discoveredPort = discoverPort()
 		if discoveredPort ~= nil then
 			conn.port = discoveredPort
-			conn.serverUrl = `http://localhost:{discoveredPort}`
+			conn.serverUrl = `http://127.0.0.1:{discoveredPort}`
 			if idx == State.getActiveTabIndex() then
 				ui.urlInput.Text = conn.serverUrl
 			end
@@ -6049,7 +6049,7 @@ local activeTabIndex = 0
 local function createConnection(port)
 	return {
 		port = port,
-		serverUrl = `http://localhost:{port}`,
+		serverUrl = `http://127.0.0.1:{port}`,
 		isActive = false,
 		pollInterval = 0.5,
 		lastPoll = 0,
@@ -6519,7 +6519,7 @@ local function init(pluginRef)
 	urlInput.Size = UDim2.new(1, 0, 0, 26)
 	urlInput.BackgroundColor3 = C.bg
 	urlInput.BorderSizePixel = 0
-	urlInput.Text = "http://localhost:58741"
+	urlInput.Text = "http://127.0.0.1:58741"
 	urlInput.TextColor3 = C.label
 	urlInput.TextSize = 11
 	urlInput.Font = Enum.Font.GothamMedium
